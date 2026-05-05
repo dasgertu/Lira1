@@ -14,6 +14,7 @@ export interface ThemeColors {
   period: string;
   predictedPeriod: string;
   ovulation: string;
+  ovulationPeak: string;
   fertile: string;
   follicular: string;
   luteal: string;
@@ -37,6 +38,7 @@ export const lightColors: ThemeColors = {
   period: '#D9A39F',
   predictedPeriod: '#EDC9BC',
   ovulation: '#F5D6E6',
+  ovulationPeak: '#D8A4C2',
   fertile: '#F8E7C8',
   follicular: '#F1DDC4',
   luteal: '#EBD9C2',
@@ -61,6 +63,7 @@ export const darkColors: ThemeColors = {
   period: '#E5A8A3',
   predictedPeriod: '#7A5A4B',
   ovulation: '#D7B6CC',
+  ovulationPeak: '#B486A3',
   fertile: '#D8BA92',
   follicular: '#7A5E47',
   luteal: '#735540',

@@ -212,7 +212,7 @@ const DayCell: React.FC<DayCellProps> = ({
   } else if (hasOvulationPeak) {
     circleStyle = {
       ...styles.circle,
-      backgroundColor: colors.primary,
+      backgroundColor: colors.ovulationPeak,
     };
     textStyle = {
       ...styles.dayText,
@@ -279,7 +279,7 @@ const Legend: React.FC<{ colors: ThemeColors }> = ({ colors }) => {
       label: 'Овуляция',
     },
     {
-      swatch: <View style={[styles.swatch, { backgroundColor: colors.primary }]} />,
+      swatch: <View style={[styles.swatch, { backgroundColor: colors.ovulationPeak }]} />,
       label: 'Пик',
     },
     {
