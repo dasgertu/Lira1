@@ -21,6 +21,7 @@ const emptyAppData = (): AppData => ({
   settings: { ...DEFAULT_SETTINGS },
   profile: { ...DEFAULT_PROFILE },
   onboardingDone: false,
+  consentAcceptedAt: null,
   subscription: { ...DEFAULT_SUBSCRIPTION },
   shippingAddress: { ...EMPTY_ADDRESS },
   boxProfile: { ...DEFAULT_BOX_PROFILE },
@@ -49,6 +50,10 @@ const normalize = (parsed: Partial<AppData>): AppData => {
     settings: { ...DEFAULT_SETTINGS, ...(parsed.settings ?? {}) },
     profile: { ...DEFAULT_PROFILE, ...(parsed.profile ?? {}) },
     onboardingDone: Boolean(parsed.onboardingDone),
+    consentAcceptedAt:
+      typeof parsed.consentAcceptedAt === 'string' && parsed.consentAcceptedAt
+        ? parsed.consentAcceptedAt
+        : null,
     subscription,
     shippingAddress: {
       ...EMPTY_ADDRESS,

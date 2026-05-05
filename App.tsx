@@ -17,6 +17,7 @@ import { HistoryScreen } from './src/screens/HistoryScreen';
 import { CycleDetailScreen } from './src/screens/CycleDetailScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { OnboardingScreen } from './src/screens/OnboardingScreen';
+import { ConsentScreen } from './src/screens/ConsentScreen';
 import { LockScreen } from './src/screens/LockScreen';
 import { SubscriptionScreen } from './src/screens/SubscriptionScreen';
 import { ManageSubscriptionScreen } from './src/screens/ManageSubscriptionScreen';
@@ -229,6 +230,15 @@ const RootNavigator: React.FC = () => {
     ...baseTheme,
     colors: { ...baseTheme.colors, ...navTheme.colors },
   };
+
+  if (!data.consentAcceptedAt) {
+    return (
+      <View style={{ flex: 1, backgroundColor: colors.background }}>
+        <ConsentScreen onAccept={() => undefined} />
+        <StatusBar style={isDark ? 'light' : 'dark'} />
+      </View>
+    );
+  }
 
   if (!data.onboardingDone) {
     return (
