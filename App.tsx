@@ -345,7 +345,7 @@ const frameStyles = StyleSheet.create({
     maxHeight: 880,
     borderRadius: 44,
     overflow: 'hidden',
-    backgroundColor: '#FBF6EF',
+    backgroundColor: '#FCEAD3',
     shadowColor: '#8E6F58',
     shadowOpacity: 0.18,
     shadowRadius: 40,

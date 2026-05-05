@@ -29,11 +29,11 @@ const COLORS = {
   ink: '#5C4633',
   muted: '#9A8266',
   accent: '#C99275',
-  bg: '#FBF6EF',
-  card: '#FFFCF7',
-  border: '#F1E2CB',
-  period: '#D9A39F',
-  ovulation: '#C7A8C0',
+  bg: '#FCEAD3',
+  card: '#FFF5E8',
+  border: '#EFCDA8',
+  period: '#E07083',
+  ovulation: '#F4B5D2',
 };
 
 const SYMPTOM_LABELS: Record<string, string> = {

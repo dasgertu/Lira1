@@ -28,8 +28,8 @@ const manifest = {
   display: 'standalone',
   start_url: '/',
   scope: '/',
-  background_color: '#FFFCF7',
-  theme_color: '#FFFCF7',
+  background_color: '#FCEAD3',
+  theme_color: '#FCEAD3',
   icons: [
     {
       src: '/icon-192.png',
@@ -57,7 +57,7 @@ const headInsert = `
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="Lira" />
     <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="theme-color" content="#FFFCF7" />
+    <meta name="theme-color" content="#FCEAD3" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
@@ -110,7 +110,7 @@ const headInsert = `
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        background: #FFFCF7;
+        background: #FCEAD3;
         color: #4A2E1F;
         font-family: Cochin, "Hoefler Text", "Times New Roman", Georgia, serif;
         transition: opacity 0.35s ease;
