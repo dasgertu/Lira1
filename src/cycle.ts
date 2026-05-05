@@ -226,11 +226,18 @@ export const buildDayMarkers = (
 
     // Project predicted period + fertile window for one cycle starting at
     // `cycleStart`. Days the user already logged as bleeding stay as "period"
-    // (logged data wins over the prediction).
+    // (logged data wins over the prediction). Predicted bleeding days that
+    // have *already passed* get filled as "period" too — the cycle math says
+    // bleeding was expected on those days and the user hasn't logged
+    // otherwise, so showing them as a forecast ring would mis-state the past.
+    // Today and future predicted days remain as a forecast ring.
     const projectCycle = (cycleStart: Date) => {
       for (let i = 0; i < periodLen; i++) {
-        const d = fmt(addDays(cycleStart, i));
-        if (!isBleeding(logs[d])) add(d, 'predictedPeriod');
+        const day = addDays(cycleStart, i);
+        const d = fmt(day);
+        if (isBleeding(logs[d])) continue;
+        const isPast = differenceInCalendarDays(day, today) < 0;
+        add(d, isPast ? 'period' : 'predictedPeriod');
       }
       if (settings.showFertileWindow) {
         const ovDate = addDays(cycleStart, -luteal);
