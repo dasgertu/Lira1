@@ -25,9 +25,7 @@ import {
 import { ThemeColors } from '../theme';
 import { PhaseRing } from '../components/PhaseRing';
 import { WaveBackground } from '../components/WaveBackground';
-import { PeriodStartedButton } from '../components/PeriodStartedButton';
 import { PeriodStartedPromptModal } from '../components/PeriodStartedPromptModal';
-import { useCycleCorrection } from '../hooks/useCycleCorrection';
 
 const ruDayWord = (n: number): string => {
   const a = Math.abs(n) % 100;
@@ -158,7 +156,6 @@ export const TodayScreen: React.FC = () => {
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const navigation = useNavigation<Nav>();
   const { isVip } = useSubscription();
-  const correction = useCycleCorrection();
   const vipShipDate = useMemo(() => {
     if (!isVip || !predictions.nextPeriodStart) return null;
     try {
@@ -334,7 +331,6 @@ export const TodayScreen: React.FC = () => {
         isVip={isVip}
         vipShipDate={vipShipDate}
         onTapBox={() => navigation.navigate('Subscription' as never)}
-        arrivedHighlight={correction.isAroundPredicted || todayInPredictedWindow}
       />
       <PeriodStartedPromptModal
         visible={showConfirmModal}
@@ -367,7 +363,6 @@ interface TodayInnerProps {
   isVip: boolean;
   vipShipDate: Date | null;
   onTapBox: () => void;
-  arrivedHighlight: boolean;
 }
 
 const TodayInner: React.FC<TodayInnerProps> = ({
@@ -390,7 +385,6 @@ const TodayInner: React.FC<TodayInnerProps> = ({
   isVip,
   vipShipDate,
   onTapBox,
-  arrivedHighlight,
 }) => {
   const dash = t('today.placeholderValue');
   const showCycleDay = !isEmpty && cycleDay !== null;
@@ -467,9 +461,7 @@ const TodayInner: React.FC<TodayInnerProps> = ({
           <View style={styles.ctaWrap}>
             <Text style={styles.ctaHint}>{t('today.noCycleHint')}</Text>
           </View>
-        ) : (
-          <PeriodStartedButton highlight={arrivedHighlight} colors={colors} />
-        )}
+        ) : null}
 
         {isVip && vipShipDate ? (
           <Pressable style={styles.vipCard} onPress={onTapBox}>
