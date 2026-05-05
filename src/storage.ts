@@ -22,6 +22,7 @@ const emptyAppData = (): AppData => ({
   profile: { ...DEFAULT_PROFILE },
   onboardingDone: false,
   consentAcceptedAt: null,
+  periodPromptSnoozedAt: null,
   subscription: { ...DEFAULT_SUBSCRIPTION },
   shippingAddress: { ...EMPTY_ADDRESS },
   boxProfile: { ...DEFAULT_BOX_PROFILE },
@@ -53,6 +54,11 @@ const normalize = (parsed: Partial<AppData>): AppData => {
     consentAcceptedAt:
       typeof parsed.consentAcceptedAt === 'string' && parsed.consentAcceptedAt
         ? parsed.consentAcceptedAt
+        : null,
+    periodPromptSnoozedAt:
+      typeof parsed.periodPromptSnoozedAt === 'string' &&
+      parsed.periodPromptSnoozedAt
+        ? parsed.periodPromptSnoozedAt
         : null,
     subscription,
     shippingAddress: {

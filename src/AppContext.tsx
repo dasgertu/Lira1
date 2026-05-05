@@ -42,6 +42,7 @@ interface AppContextValue {
   updateProfile: (patch: Partial<Profile>) => Promise<void>;
   setOnboardingDone: (done: boolean) => Promise<void>;
   setConsentAccepted: () => Promise<void>;
+  setPeriodPromptSnoozed: (ymd: string) => Promise<void>;
   updateSubscription: (patch: Partial<Subscription>) => Promise<void>;
   updateShippingAddress: (patch: Partial<ShippingAddress>) => Promise<void>;
   updateBoxProfile: (patch: Partial<BoxProfile>) => Promise<void>;
@@ -75,6 +76,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     profile: { ...DEFAULT_PROFILE },
     onboardingDone: false,
     consentAcceptedAt: null,
+    periodPromptSnoozedAt: null,
     subscription: { ...DEFAULT_SUBSCRIPTION },
     shippingAddress: { ...EMPTY_ADDRESS },
     boxProfile: { ...DEFAULT_BOX_PROFILE },
@@ -198,6 +200,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     await persist(next);
   }, [persist]);
 
+  const setPeriodPromptSnoozed = useCallback(
+    async (ymd: string) => {
+      const current = dataRef.current;
+      if (current.periodPromptSnoozedAt === ymd) return;
+      const next: AppData = { ...current, periodPromptSnoozedAt: ymd };
+      await persist(next);
+    },
+    [persist],
+  );
+
   const updateSubscription = useCallback(
     async (patch: Partial<Subscription>) => {
       const current = dataRef.current;
@@ -272,6 +284,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       profile: { ...DEFAULT_PROFILE },
       onboardingDone: false,
       consentAcceptedAt: null,
+      periodPromptSnoozedAt: null,
       subscription: { ...DEFAULT_SUBSCRIPTION },
       shippingAddress: { ...EMPTY_ADDRESS },
       boxProfile: { ...DEFAULT_BOX_PROFILE },
@@ -330,6 +343,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       updateProfile,
       setOnboardingDone,
       setConsentAccepted,
+      setPeriodPromptSnoozed,
       updateSubscription,
       updateShippingAddress,
       updateBoxProfile,
@@ -352,6 +366,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       updateProfile,
       setOnboardingDone,
       setConsentAccepted,
+      setPeriodPromptSnoozed,
       updateSubscription,
       updateShippingAddress,
       updateBoxProfile,

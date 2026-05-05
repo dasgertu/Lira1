@@ -210,6 +210,9 @@ export interface AppData {
    * Required before the rest of the app is reachable, including the
    * onboarding "Hi there" screen, for compliance with 152-ФЗ in RU. */
   consentAcceptedAt: string | null;
+  /** YYYY-MM-DD of the last day the user dismissed the "did your period
+   * start today?" popup with "Not yet". Re-prompts the next day. */
+  periodPromptSnoozedAt: string | null;
   subscription: Subscription;
   shippingAddress: ShippingAddress;
   boxProfile: BoxProfile;
