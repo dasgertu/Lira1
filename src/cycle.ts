@@ -223,16 +223,17 @@ export const buildDayMarkers = (
     const periodLen = predictions.effectivePeriodLength;
     const luteal = settings.lutealPhaseLength;
     const horizonDays = 365;
-    let startCursor = parseISO(predictions.nextPeriodStart);
-    while (differenceInCalendarDays(startCursor, today) <= horizonDays) {
-      // Predicted bleeding days
+
+    // Project predicted period + fertile window for one cycle starting at
+    // `cycleStart`. Days the user already logged as bleeding stay as "period"
+    // (logged data wins over the prediction).
+    const projectCycle = (cycleStart: Date) => {
       for (let i = 0; i < periodLen; i++) {
-        const d = fmt(addDays(startCursor, i));
+        const d = fmt(addDays(cycleStart, i));
         if (!isBleeding(logs[d])) add(d, 'predictedPeriod');
       }
-      // Ovulation + fertile window for this projected cycle
       if (settings.showFertileWindow) {
-        const ovDate = addDays(startCursor, -luteal);
+        const ovDate = addDays(cycleStart, -luteal);
         const fertileStart = addDays(ovDate, -5);
         const fertileEnd = addDays(ovDate, 1);
         let fc = fertileStart;
@@ -242,6 +243,30 @@ export const buildDayMarkers = (
         }
         add(fmt(ovDate), 'ovulation');
       }
+    };
+
+    // `computePredictions` rolls `nextPeriodStart` forward until it lands in
+    // the future relative to today. That hides any cycle that *should* have
+    // started recently — e.g. a user whose period is a few days late ends up
+    // with no May forecast on the calendar at all, even though May 1–5 was
+    // predicted to be bleeding. Project that "missed" cycle too so the days
+    // that were predicted but haven't been logged still show as a forecast
+    // (coral ring), and the cycle's fertile/ovulation window is plotted.
+    const next = parseISO(predictions.nextPeriodStart);
+    const lastLogged = predictions.lastPeriodStart
+      ? parseISO(predictions.lastPeriodStart)
+      : null;
+    const prevStart = addDays(next, -cycleLen);
+    if (
+      lastLogged &&
+      differenceInCalendarDays(prevStart, lastLogged) > 0
+    ) {
+      projectCycle(prevStart);
+    }
+
+    let startCursor = next;
+    while (differenceInCalendarDays(startCursor, today) <= horizonDays) {
+      projectCycle(startCursor);
       startCursor = addDays(startCursor, cycleLen);
     }
   }
