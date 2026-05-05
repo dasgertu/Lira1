@@ -73,7 +73,13 @@ export const computeCycleStats = (
   }
 
   // Compute average period length by counting consecutive bleeding days
-  // starting from each detected period start.
+  // starting from each detected period start. Skip the still-in-progress
+  // episode (the last bleeding day is today): its length is incomplete and
+  // would otherwise drag the rolling average way down — e.g. if the user
+  // just tapped "Yes, period started today", that single day would weigh
+  // 1 against history and the predicted period length collapses to ~2,
+  // hiding most of the forecast for the rest of the current cycle.
+  const today = new Date();
   const periodLengths: number[] = [];
   for (const start of periodStarts) {
     let len = 0;
@@ -83,7 +89,12 @@ export const computeCycleStats = (
       cursor = addDays(cursor, 1);
       if (len > 14) break; // safety
     }
-    if (len > 0) periodLengths.push(len);
+    // After the loop, `cursor` points at the first non-bleeding day. If
+    // that day is in the future relative to today, the episode might still
+    // continue (today is bleeding, tomorrow is unknown) — treat as
+    // in-progress and exclude.
+    const inProgress = differenceInCalendarDays(cursor, today) > 0;
+    if (len > 0 && !inProgress) periodLengths.push(len);
   }
   const avgPeriod =
     periodLengths.length > 0
@@ -256,9 +267,13 @@ export const buildDayMarkers = (
     // the future relative to today. That hides any cycle that *should* have
     // started recently — e.g. a user whose period is a few days late ends up
     // with no May forecast on the calendar at all, even though May 1–5 was
-    // predicted to be bleeding. Project that "missed" cycle too so the days
-    // that were predicted but haven't been logged still show as a forecast
-    // (coral ring), and the cycle's fertile/ovulation window is plotted.
+    // predicted to be bleeding. Project that "missed" / current cycle too so
+    // the days that were predicted but haven't been logged still show as a
+    // forecast (coral ring), and the cycle's fertile/ovulation window is
+    // plotted. We include the case where `prevStart === lastLogged` — that
+    // happens when the user just logged today as the start of their current
+    // cycle; the rest of the predicted bleeding days for that cycle still
+    // need to be plotted as forecast.
     const next = parseISO(predictions.nextPeriodStart);
     const lastLogged = predictions.lastPeriodStart
       ? parseISO(predictions.lastPeriodStart)
@@ -266,7 +281,7 @@ export const buildDayMarkers = (
     const prevStart = addDays(next, -cycleLen);
     if (
       lastLogged &&
-      differenceInCalendarDays(prevStart, lastLogged) > 0
+      differenceInCalendarDays(prevStart, lastLogged) >= 0
     ) {
       projectCycle(prevStart);
     }
