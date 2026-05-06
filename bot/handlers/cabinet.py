@@ -26,17 +26,37 @@ router = Router(name="cabinet")
 
 
 @router.message(Command("mybox"))
-async def my_box_cmd(message: Message) -> None:
+async def my_box_cmd(message: Message, state: FSMContext) -> None:
+    from bot.handlers.start import ensure_consent
+
+    if message.from_user is None:
+        return
+    if not await ensure_consent(message, state, message.from_user, pending="welcome"):
+        return
     await _render_status(message)
 
 
 @router.message(F.text == "📦 Мой бокс")
-async def my_box_btn(message: Message) -> None:
+async def my_box_btn(message: Message, state: FSMContext) -> None:
+    from bot.handlers.start import ensure_consent
+
+    if message.from_user is None:
+        return
+    if not await ensure_consent(message, state, message.from_user, pending="welcome"):
+        return
     await _render_status(message)
 
 
 @router.callback_query(F.data == "cabinet:status")
-async def my_box_cb(cb: CallbackQuery) -> None:
+async def my_box_cb(cb: CallbackQuery, state: FSMContext) -> None:
+    from bot.handlers.start import ensure_consent
+
+    if cb.from_user is None or cb.message is None:
+        await cb.answer()
+        return
+    if not await ensure_consent(cb.message, state, cb.from_user, pending="welcome"):
+        await cb.answer()
+        return
     await _render_status(cb.message, cb_user=cb.from_user)
     await cb.answer()
 

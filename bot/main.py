@@ -42,6 +42,7 @@ async def init_db() -> None:
         # ephemeral sqlite DB on the dev VM).
         await _ensure_column(conn, "profiles", "last_period_start", "DATE")
         await _ensure_column(conn, "profiles", "cycle_sync_code", "VARCHAR(16)")
+        await _ensure_column(conn, "users", "pd_consent_at", "TIMESTAMP")
     async with session_scope() as session:
         added = await seed_catalog(session)
         if added:

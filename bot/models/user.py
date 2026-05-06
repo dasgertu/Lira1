@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from sqlalchemy import BigInteger, String
+from datetime import datetime
+
+from sqlalchemy import BigInteger, DateTime, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from bot.models.base import Base
@@ -21,6 +23,10 @@ class User(Base):
     username: Mapped[str | None] = mapped_column(String(64))
     first_name: Mapped[str | None] = mapped_column(String(128))
     language_code: Mapped[str | None] = mapped_column(String(8))
+    # Timestamp when the user accepted the personal-data processing consent
+    # (152-ФЗ). Until this is set, /start shows only the consent screen and
+    # blocks access to the questionnaire / Premium invoice.
+    pd_consent_at: Mapped[datetime | None] = mapped_column(DateTime, default=None)
 
     profile: Mapped["Profile | None"] = relationship(
         "Profile", back_populates="user", uselist=False, cascade="all, delete-orphan"

@@ -125,6 +125,14 @@ def _q(text: str) -> str:
 
 @router.callback_query(F.data == "onboarding:start")
 async def begin(cb: CallbackQuery, state: FSMContext) -> None:
+    from bot.handlers.start import ensure_consent
+
+    if cb.from_user is None or cb.message is None:
+        await cb.answer()
+        return
+    if not await ensure_consent(cb.message, state, cb.from_user, pending="welcome"):
+        await cb.answer()
+        return
     await _ensure_profile(cb)
     await state.set_state(Onboarding.name)
     await cb.message.answer(_q("Шаг 1/7. Как тебя зовут?"), parse_mode="HTML")
@@ -133,6 +141,12 @@ async def begin(cb: CallbackQuery, state: FSMContext) -> None:
 
 @router.message(Command("setup"))
 async def begin_via_command(message: Message, state: FSMContext) -> None:
+    from bot.handlers.start import ensure_consent
+
+    if message.from_user is None:
+        return
+    if not await ensure_consent(message, state, message.from_user, pending="welcome"):
+        return
     await _ensure_profile(message)
     await state.set_state(Onboarding.name)
     await message.answer(_q("Шаг 1/7. Как тебя зовут?"), parse_mode="HTML")
