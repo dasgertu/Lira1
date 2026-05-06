@@ -15,11 +15,15 @@ import { format, parseISO } from 'date-fns';
 import { ru } from 'date-fns/locale';
 
 import { useApp } from '../AppContext';
+import { findPeriodStarts } from '../cycle';
 import { useSubscription } from '../hooks/useSubscription';
 import { RootStackParamList } from '../navigation';
 import { SERIF_STACK, WaveBackground } from '../components/WaveBackground';
 import { ThemeColors } from '../theme';
-import { buildTelegramLinkUrl } from '../utils/subscription';
+import {
+  buildTelegramLinkUrl,
+  pushCyclePayloadToBot,
+} from '../utils/subscription';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -160,7 +164,7 @@ const PremiumCard: React.FC<PremiumCardProps> = ({ active, onPress, colors }) =>
 };
 
 export const SubscriptionScreen: React.FC = () => {
-  const { colors } = useApp();
+  const { colors, data } = useApp();
   const {
     subscription,
     tier,
@@ -217,6 +221,15 @@ export const SubscriptionScreen: React.FC = () => {
   const openSyncWithTelegram = async () => {
     setSyncing(true);
     try {
+      // Push whatever cycle data the user has logged so far so the bot
+      // can skip the cycle questions in the box questionnaire.
+      const starts = findPeriodStarts(data.logs);
+      const anchor = starts.length > 0 ? starts[starts.length - 1] : null;
+      await pushCyclePayloadToBot({
+        anchorDate: anchor,
+        cycleLength: data.settings.averageCycleLength,
+        periodLength: data.settings.averagePeriodLength,
+      });
       const url = linkUrl ?? (await buildTelegramLinkUrl());
       const can = await Linking.canOpenURL(url);
       if (!can) {

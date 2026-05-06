@@ -186,11 +186,38 @@ async def step_city(message: Message, state: FSMContext) -> None:
         await message.answer("Город текстом, пожалуйста.")
         return
     await _save_field(message, city=city)
-    await state.set_state(Onboarding.flow_code_choice)
+    # Read the just-saved profile to see whether the app already pushed
+    # cycle data via /v1/link. If so, skip the manual cycle/period
+    # questions entirely; otherwise ask cycle length directly (the
+    # legacy "do you have a sync code from the app?" prompt is gone —
+    # syncing happens transparently through the device_id binding).
+    async with session_scope() as session:
+        user = await get_or_create_user(session, message.from_user)
+        profile = await get_or_create_profile(session, user)
+        has_cycle = (
+            profile.cycle_length_days is not None
+            and profile.period_length_days is not None
+        )
+        anchor = profile.last_period_start
+        cycle = profile.cycle_length_days
+        period = profile.period_length_days
+    if has_cycle:
+        bullets = []
+        if anchor is not None:
+            bullets.append(f"• Последние месячные: <b>{anchor:%d.%m.%Y}</b>")
+        bullets.append(f"• Длина цикла: <b>{cycle} дн.</b>")
+        bullets.append(f"• Длина месячных: <b>{period} дн.</b>")
+        await message.answer(
+            "Цикл уже синхронизирован из приложения Lira 💫\n"
+            + "\n".join(bullets),
+            parse_mode="HTML",
+        )
+        await _start_step2(message, state)
+        return
+    await state.set_state(Onboarding.cycle_length)
     await message.answer(
-        _q("У тебя уже есть код синхронизации цикла из приложения Lira?"),
+        _q("Какая средняя длина цикла? (число дней, например 28)"),
         parse_mode="HTML",
-        reply_markup=yes_no(skip=True),
     )
 
 

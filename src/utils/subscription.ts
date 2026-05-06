@@ -12,6 +12,15 @@ import Constants from 'expo-constants';
 import { SubscriptionTier } from '../types';
 import { getDeviceId } from './device';
 
+export interface CyclePayload {
+  /** Last period start, ISO YYYY-MM-DD. */
+  anchorDate?: string | null;
+  /** Average cycle length in days. */
+  cycleLength?: number | null;
+  /** Average period (bleeding) length in days. */
+  periodLength?: number | null;
+}
+
 export interface SubscriptionStatus {
   valid: boolean;
   tariff?: SubscriptionTier;
@@ -72,4 +81,35 @@ export const buildTelegramLinkUrl = async (
 ): Promise<string> => {
   const deviceId = deviceIdOverride ?? (await getDeviceId());
   return `https://t.me/${BOT_USERNAME}?start=link_${encodeURIComponent(deviceId)}`;
+};
+
+/**
+ * Push the cycle data the app collected (anchor date, cycle length,
+ * period length) to the API so that when the user opens the bot via
+ * the deep link, the bot can copy it into the box-questionnaire profile
+ * and skip asking those questions again. Failures are silent — the bot
+ * will just fall back to asking manually.
+ */
+export const pushCyclePayloadToBot = async (
+  cycle: CyclePayload,
+  deviceIdOverride?: string,
+): Promise<void> => {
+  const deviceId = deviceIdOverride ?? (await getDeviceId());
+  const url = `${baseUrl().replace(/\/$/, '')}/v1/link`;
+  const body = {
+    device_id: deviceId,
+    bot_username: BOT_USERNAME,
+    anchor_date: cycle.anchorDate ?? null,
+    cycle_length_days: cycle.cycleLength ?? null,
+    period_length_days: cycle.periodLength ?? null,
+  };
+  try {
+    await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    // Best effort — bot still binds the device_id on /start link_X.
+  }
 };

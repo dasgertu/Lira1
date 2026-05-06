@@ -219,10 +219,16 @@ async def on_start_link(message: Message, state: FSMContext) -> None:
     """Deep link from the app: bind device_id ↔ telegram user, then resume welcome.
 
     Triggered when the user taps "Синхронизация с Telegram" inside Lira;
-    the app opens ``t.me/<bot>?start=link_<device_id>``. We store the
-    device_id on the User row so the app can later look up subscription
-    status by GET /v1/subscription?device_id=…, no manual codes needed.
+    the app opens ``t.me/<bot>?start=link_<device_id>``. We:
+
+    1. set ``users.device_id`` so the API can answer subscription queries,
+    2. consume any ``PendingDeviceLink`` row the app pre-pushed (cycle
+       anchor date, cycle length, period length) and copy it into the
+       user's ``Profile`` so the box questionnaire can skip the
+       cycle-related questions.
     """
+    from bot.models import PendingDeviceLink  # avoid module-load cycles
+
     await state.clear()
     if message.from_user is None or message.text is None:
         return
@@ -235,16 +241,39 @@ async def on_start_link(message: Message, state: FSMContext) -> None:
     if not device_id:
         await _show_welcome(message)
         return
+    cycle_synced = False
     async with session_scope() as session:
         user = await get_or_create_user(session, message.from_user)
         user.device_id = device_id
         accepted = user.pd_consent_at is not None
-    await message.answer(
+        pending = await session.get(PendingDeviceLink, device_id)
+        if pending is not None:
+            from bot.services.users import get_or_create_profile  # type: ignore
+
+            profile = await get_or_create_profile(session, user)
+            if pending.anchor_date is not None:
+                profile.last_period_start = pending.anchor_date
+            if pending.cycle_length_days is not None:
+                profile.cycle_length_days = pending.cycle_length_days
+            if pending.period_length_days is not None:
+                profile.period_length_days = pending.period_length_days
+            cycle_synced = (
+                pending.anchor_date is not None
+                or pending.cycle_length_days is not None
+                or pending.period_length_days is not None
+            )
+            await session.delete(pending)
+    confirmation = (
         "🔗 <b>Приложение Lira подключено к этому Telegram.</b>\n\n"
         "Теперь после оплаты подписка автоматически активируется в "
-        "приложении — никаких кодов вводить не нужно.",
-        parse_mode="HTML",
+        "приложении — никаких кодов вводить не нужно."
     )
+    if cycle_synced:
+        confirmation += (
+            "\n\n📅 Я подтянула данные о цикле из приложения, в опроснике "
+            "не буду спрашивать про даты ещё раз."
+        )
+    await message.answer(confirmation, parse_mode="HTML")
     if not accepted:
         await _show_consent(message, state, pending="welcome")
         return

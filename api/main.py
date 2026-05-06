@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import AsyncIterator
 
 from fastapi import FastAPI
@@ -30,7 +30,7 @@ from sqlalchemy import desc, select
 
 from bot.config import get_settings
 from bot.db import engine, session_scope
-from bot.models import Base, Subscription, User
+from bot.models import Base, PendingDeviceLink, Subscription, User
 from bot.services.catalog import seed_catalog
 from bot.services.codes import redeem_code
 
@@ -88,6 +88,16 @@ class SubscriptionOut(BaseModel):
 class LinkIn(BaseModel):
     device_id: str = Field(..., min_length=1, max_length=128)
     bot_username: str | None = Field(default=None, max_length=64)
+    # Optional cycle data the app collected during in-app onboarding. We
+    # stash it keyed by device_id so the bot can copy it into the user's
+    # questionnaire profile and skip the cycle-related questions.
+    anchor_date: str | None = Field(
+        default=None,
+        max_length=10,
+        description="Last period start date in YYYY-MM-DD",
+    )
+    cycle_length_days: int | None = Field(default=None, ge=18, le=60)
+    period_length_days: int | None = Field(default=None, ge=1, le=14)
 
 
 class LinkOut(BaseModel):
@@ -157,14 +167,46 @@ async def subscription_status(device_id: str) -> SubscriptionOut:
 
 @app.post("/v1/link", response_model=LinkOut)
 async def build_link(body: LinkIn) -> LinkOut:
-    """Return the bot deep-link the app should open to bind the device.
+    """Stash any cycle data the app collected and return the bot deep-link.
 
-    The actual binding happens inside the bot when the user taps "Open"
-    and the bot receives ``/start link_<device_id>``. This endpoint just
-    builds the URL so the app doesn't have to hardcode the bot username.
+    The app calls this just before opening the bot so the bot can read
+    the cycle data on ``/start link_<device_id>`` and skip the cycle
+    questions in the box questionnaire.
     """
     settings = get_settings()
     bot_username = body.bot_username or settings.bot_username or "lowerBsk24_bot"
+
+    parsed_anchor: date | None = None
+    if body.anchor_date:
+        try:
+            parsed_anchor = date.fromisoformat(body.anchor_date)
+        except ValueError:
+            parsed_anchor = None
+
+    if (
+        parsed_anchor is not None
+        or body.cycle_length_days is not None
+        or body.period_length_days is not None
+    ):
+        async with session_scope() as session:
+            existing = await session.get(PendingDeviceLink, body.device_id)
+            if existing is None:
+                session.add(
+                    PendingDeviceLink(
+                        device_id=body.device_id,
+                        anchor_date=parsed_anchor,
+                        cycle_length_days=body.cycle_length_days,
+                        period_length_days=body.period_length_days,
+                    )
+                )
+            else:
+                if parsed_anchor is not None:
+                    existing.anchor_date = parsed_anchor
+                if body.cycle_length_days is not None:
+                    existing.cycle_length_days = body.cycle_length_days
+                if body.period_length_days is not None:
+                    existing.period_length_days = body.period_length_days
+
     return LinkOut(
         deep_link=f"https://t.me/{bot_username}?start=link_{body.device_id}",
         device_id=body.device_id,
