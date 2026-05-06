@@ -19,6 +19,12 @@ export interface CyclePayload {
   cycleLength?: number | null;
   /** Average period (bleeding) length in days. */
   periodLength?: number | null;
+  /**
+   * Full ordered list of bleeding episodes the app has logged. Used by
+   * the admin notification on the bot side to show real history instead
+   * of just averages.
+   */
+  episodes?: { start: string; end: string }[] | null;
 }
 
 export interface SubscriptionStatus {
@@ -102,6 +108,7 @@ export const pushCyclePayloadToBot = async (
     anchor_date: cycle.anchorDate ?? null,
     cycle_length_days: cycle.cycleLength ?? null,
     period_length_days: cycle.periodLength ?? null,
+    period_episodes: cycle.episodes ?? null,
   };
   try {
     await fetch(url, {

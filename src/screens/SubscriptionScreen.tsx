@@ -15,7 +15,7 @@ import { format, parseISO } from 'date-fns';
 import { ru } from 'date-fns/locale';
 
 import { useApp } from '../AppContext';
-import { findPeriodStarts } from '../cycle';
+import { findPeriodEpisodes, findPeriodStarts } from '../cycle';
 import { useSubscription } from '../hooks/useSubscription';
 import { RootStackParamList } from '../navigation';
 import { SERIF_STACK, WaveBackground } from '../components/WaveBackground';
@@ -225,10 +225,12 @@ export const SubscriptionScreen: React.FC = () => {
       // can skip the cycle questions in the box questionnaire.
       const starts = findPeriodStarts(data.logs);
       const anchor = starts.length > 0 ? starts[starts.length - 1] : null;
+      const episodes = findPeriodEpisodes(data.logs);
       await pushCyclePayloadToBot({
         anchorDate: anchor,
         cycleLength: data.settings.averageCycleLength,
         periodLength: data.settings.averagePeriodLength,
+        episodes,
       });
       const url = linkUrl ?? (await buildTelegramLinkUrl());
       const can = await Linking.canOpenURL(url);

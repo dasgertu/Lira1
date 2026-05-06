@@ -186,11 +186,13 @@ async def step_city(message: Message, state: FSMContext) -> None:
         await message.answer("Город текстом, пожалуйста.")
         return
     await _save_field(message, city=city)
-    # Read the just-saved profile to see whether the app already pushed
-    # cycle data via /v1/link. If so, skip the manual cycle/period
-    # questions entirely; otherwise ask cycle length directly (the
-    # legacy "do you have a sync code from the app?" prompt is gone —
-    # syncing happens transparently through the device_id binding).
+    # Cycle data is no longer asked in the bot — the Lira app pushes it
+    # automatically via the "Sync with Telegram" deep link (anchor date,
+    # average cycle length, period length, and the full list of period
+    # episodes). If the user opened the bot directly without the app,
+    # we still skip these questions: the operator will see "—" in the
+    # admin notification and the box ships on the default 28-day cycle
+    # until the user starts logging in the app.
     async with session_scope() as session:
         user = await get_or_create_user(session, message.from_user)
         profile = await get_or_create_profile(session, user)
@@ -208,17 +210,11 @@ async def step_city(message: Message, state: FSMContext) -> None:
         bullets.append(f"• Длина цикла: <b>{cycle} дн.</b>")
         bullets.append(f"• Длина месячных: <b>{period} дн.</b>")
         await message.answer(
-            "Цикл уже синхронизирован из приложения Lira 💫\n"
+            "Цикл синхронизирован из приложения Lira 💫\n"
             + "\n".join(bullets),
             parse_mode="HTML",
         )
-        await _start_step2(message, state)
-        return
-    await state.set_state(Onboarding.cycle_length)
-    await message.answer(
-        _q("Какая средняя длина цикла? (число дней, например 28)"),
-        parse_mode="HTML",
-    )
+    await _start_step2(message, state)
 
 
 @router.callback_query(Onboarding.flow_code_choice, F.data.in_({"yes", "no", "nav:skip"}))

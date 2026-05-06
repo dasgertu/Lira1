@@ -26,7 +26,13 @@ import {
 import { loadData, saveData, clearData as clearStorage } from './storage';
 import { setLocale, t as translate } from './i18n';
 import { ThemeColors, resolveColors } from './theme';
-import { computePredictions, CyclePredictions } from './cycle';
+import {
+  computePredictions,
+  CyclePredictions,
+  findPeriodEpisodes,
+  findPeriodStarts,
+} from './cycle';
+import { pushCyclePayloadToBot } from './utils/subscription';
 import { rescheduleNotifications } from './notifications';
 
 interface AppContextValue {
@@ -96,6 +102,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       mounted = false;
     };
   }, []);
+
+  // Once the user logs anything cycle-related, mirror it to the bot so
+  // the operator's box-questionnaire view stays current with each app
+  // update — no need for the user to keep tapping "Sync with Telegram"
+  // every month. Debounced to avoid spamming the API on rapid edits.
+  // Idempotent: server only writes through to Profile if device_id is
+  // already bound; otherwise it just stashes the latest snapshot.
+  useEffect(() => {
+    if (!ready) return;
+    const handle = setTimeout(() => {
+      const starts = findPeriodStarts(data.logs);
+      if (starts.length === 0) return;
+      const anchor = starts[starts.length - 1];
+      const episodes = findPeriodEpisodes(data.logs);
+      void pushCyclePayloadToBot({
+        anchorDate: anchor,
+        cycleLength: data.settings.averageCycleLength,
+        periodLength: data.settings.averagePeriodLength,
+        episodes,
+      });
+    }, 1500);
+    return () => clearTimeout(handle);
+  }, [
+    ready,
+    data.logs,
+    data.settings.averageCycleLength,
+    data.settings.averagePeriodLength,
+  ]);
 
   // Keep i18n in sync synchronously during render so the same render that
   // bumps `language` already produces translated strings.

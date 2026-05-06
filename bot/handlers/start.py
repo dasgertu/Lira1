@@ -257,10 +257,15 @@ async def on_start_link(message: Message, state: FSMContext) -> None:
                 profile.cycle_length_days = pending.cycle_length_days
             if pending.period_length_days is not None:
                 profile.period_length_days = pending.period_length_days
+            if pending.period_episodes is not None:
+                extra = dict(profile.extra or {})
+                extra["period_episodes"] = pending.period_episodes
+                profile.extra = extra
             cycle_synced = (
                 pending.anchor_date is not None
                 or pending.cycle_length_days is not None
                 or pending.period_length_days is not None
+                or pending.period_episodes is not None
             )
             await session.delete(pending)
     confirmation = (

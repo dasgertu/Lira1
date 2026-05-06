@@ -28,6 +28,38 @@ export const findPeriodStarts = (logs: Record<string, DayLog>): string[] => {
   return starts;
 };
 
+/**
+ * Identifies contiguous bleeding episodes as ``{start, end}`` ISO pairs.
+ * ``end`` is the last consecutive bleeding day (inclusive). Used by the
+ * Sync-with-Telegram flow so the bot/admin can see actual cycle history
+ * (e.g. ``3-8 апр``, ``30 апр - 4 мая``) instead of just averages.
+ */
+export const findPeriodEpisodes = (
+  logs: Record<string, DayLog>,
+): { start: string; end: string }[] => {
+  const dates = Object.keys(logs)
+    .filter((d) => isBleeding(logs[d]))
+    .sort();
+  if (dates.length === 0) return [];
+  const episodes: { start: string; end: string }[] = [];
+  let curStart = dates[0];
+  let curEnd = dates[0];
+  for (let i = 1; i < dates.length; i++) {
+    const prev = curEnd;
+    const next = dates[i];
+    const expected = fmt(addDays(parseISO(prev), 1));
+    if (next === expected) {
+      curEnd = next;
+    } else {
+      episodes.push({ start: curStart, end: curEnd });
+      curStart = next;
+      curEnd = next;
+    }
+  }
+  episodes.push({ start: curStart, end: curEnd });
+  return episodes;
+};
+
 export interface CycleStats {
   cycleLengths: number[];
   averageCycleLength: number | null;

@@ -85,6 +85,13 @@ class SubscriptionOut(BaseModel):
     linked: bool = False
 
 
+class PeriodEpisode(BaseModel):
+    """One observed period episode (start..end inclusive, ISO dates)."""
+
+    start: str = Field(..., max_length=10)
+    end: str = Field(..., max_length=10)
+
+
 class LinkIn(BaseModel):
     device_id: str = Field(..., min_length=1, max_length=128)
     bot_username: str | None = Field(default=None, max_length=64)
@@ -98,6 +105,10 @@ class LinkIn(BaseModel):
     )
     cycle_length_days: int | None = Field(default=None, ge=18, le=60)
     period_length_days: int | None = Field(default=None, ge=1, le=14)
+    # Ordered list (oldest → newest) of all period episodes the app has
+    # logged so far. Used by the admin notification so the operator
+    # sees the real history (e.g. "3-8 апр, 30 апр - 4 мая, …").
+    period_episodes: list[PeriodEpisode] | None = Field(default=None)
 
 
 class LinkOut(BaseModel):
@@ -169,9 +180,15 @@ async def subscription_status(device_id: str) -> SubscriptionOut:
 async def build_link(body: LinkIn) -> LinkOut:
     """Stash any cycle data the app collected and return the bot deep-link.
 
-    The app calls this just before opening the bot so the bot can read
-    the cycle data on ``/start link_<device_id>`` and skip the cycle
-    questions in the box questionnaire.
+    Two paths:
+
+    * If the device_id is already bound to a Telegram user (the user has
+      tapped "Sync with Telegram" before), write the cycle data directly
+      to that user's questionnaire ``Profile`` so the admin notification
+      stays current with each app-side log change.
+    * Otherwise, stash it in ``PendingDeviceLink`` keyed by device_id;
+      the bot will copy it into the Profile on the very first
+      ``/start link_<device_id>`` call.
     """
     settings = get_settings()
     bot_username = body.bot_username or settings.bot_username or "lowerBsk24_bot"
@@ -183,29 +200,63 @@ async def build_link(body: LinkIn) -> LinkOut:
         except ValueError:
             parsed_anchor = None
 
-    if (
+    episodes_payload: list[dict] | None = None
+    if body.period_episodes is not None:
+        episodes_payload = [
+            {"start": e.start, "end": e.end} for e in body.period_episodes
+        ]
+
+    has_anything = (
         parsed_anchor is not None
         or body.cycle_length_days is not None
         or body.period_length_days is not None
-    ):
+        or episodes_payload is not None
+    )
+
+    if has_anything:
         async with session_scope() as session:
-            existing = await session.get(PendingDeviceLink, body.device_id)
-            if existing is None:
-                session.add(
-                    PendingDeviceLink(
-                        device_id=body.device_id,
-                        anchor_date=parsed_anchor,
-                        cycle_length_days=body.cycle_length_days,
-                        period_length_days=body.period_length_days,
-                    )
+            user = (
+                await session.execute(
+                    select(User).where(User.device_id == body.device_id)
                 )
-            else:
+            ).scalar_one_or_none()
+            if user is not None:
+                # Already linked → write straight to Profile so the admin
+                # always sees fresh data on every box assembly.
+                from bot.services.users import get_or_create_profile
+
+                profile = await get_or_create_profile(session, user)
                 if parsed_anchor is not None:
-                    existing.anchor_date = parsed_anchor
+                    profile.last_period_start = parsed_anchor
                 if body.cycle_length_days is not None:
-                    existing.cycle_length_days = body.cycle_length_days
+                    profile.cycle_length_days = body.cycle_length_days
                 if body.period_length_days is not None:
-                    existing.period_length_days = body.period_length_days
+                    profile.period_length_days = body.period_length_days
+                if episodes_payload is not None:
+                    extra = dict(profile.extra or {})
+                    extra["period_episodes"] = episodes_payload
+                    profile.extra = extra
+            else:
+                existing = await session.get(PendingDeviceLink, body.device_id)
+                if existing is None:
+                    session.add(
+                        PendingDeviceLink(
+                            device_id=body.device_id,
+                            anchor_date=parsed_anchor,
+                            cycle_length_days=body.cycle_length_days,
+                            period_length_days=body.period_length_days,
+                            period_episodes=episodes_payload,
+                        )
+                    )
+                else:
+                    if parsed_anchor is not None:
+                        existing.anchor_date = parsed_anchor
+                    if body.cycle_length_days is not None:
+                        existing.cycle_length_days = body.cycle_length_days
+                    if body.period_length_days is not None:
+                        existing.period_length_days = body.period_length_days
+                    if episodes_payload is not None:
+                        existing.period_episodes = episodes_payload
 
     return LinkOut(
         deep_link=f"https://t.me/{bot_username}?start=link_{body.device_id}",

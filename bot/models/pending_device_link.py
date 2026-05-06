@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timezone
 
-from sqlalchemy import Date, DateTime, Integer, String
+from sqlalchemy import Date, DateTime, Integer, JSON, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from bot.models.base import Base
@@ -28,6 +28,11 @@ class PendingDeviceLink(Base):
     anchor_date: Mapped[date | None] = mapped_column(Date, default=None)
     cycle_length_days: Mapped[int | None] = mapped_column(Integer, default=None)
     period_length_days: Mapped[int | None] = mapped_column(Integer, default=None)
+    # List of [start_iso, end_iso] pairs covering the user's actually
+    # logged period episodes. Lets the admin notification show real
+    # date ranges (e.g. "3-8 апр, 30 апр - 4 мая, …") instead of just a
+    # single anchor + averages.
+    period_episodes: Mapped[list[dict] | None] = mapped_column(JSON, default=None)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
