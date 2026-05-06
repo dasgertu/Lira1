@@ -30,13 +30,77 @@ type Nav = NativeStackNavigationProp<RootStackParamList>;
 const BOT_USERNAME = 'lowerBsk24_bot';
 const BUTTON_ACCENT = '#8267E6';
 
+interface TierPalette {
+  /** Solid background tint of the card. */
+  bg: string;
+  /** Top-right large blurred-look glow blob. */
+  glowA: string;
+  /** Bottom-left large blurred-look glow blob. */
+  glowB: string;
+  /** Soft thin highlight stroke layered on top. */
+  highlight: string;
+  /** Drop-shadow color (subtle, behind the card). */
+  shadow: string;
+  /** Border color when card is "selected" (subscription active). */
+  borderActive: string;
+  /** Default border color. */
+  border: string;
+  /** Title + price text color. */
+  textPrimary: string;
+  /** Body text color. */
+  textBody: string;
+  /** Color of the small badge pill at the top of the card. */
+  badgeBg: string;
+  badgeText: string;
+  /** CTA button background + text colors. */
+  buttonBg: string;
+  buttonText: string;
+}
+
+// Warm sunrise palette — soft peach cream with rose glow. Conveys
+// "everyday morning ritual".
+const PALETTE_DAWN: TierPalette = {
+  bg: '#FBE0CF',
+  glowA: '#F4B5D2',
+  glowB: '#FCD0C0',
+  highlight: 'rgba(255,255,255,0.55)',
+  shadow: '#E7B9A6',
+  borderActive: '#C45A8E',
+  border: 'rgba(255,255,255,0.55)',
+  textPrimary: '#7E4F58',
+  textBody: '#8F6E6A',
+  badgeBg: '#FFF3EA',
+  badgeText: '#C45A8E',
+  buttonBg: '#C45A8E',
+  buttonText: '#FFFFFF',
+};
+
+// Deep sunset palette — rich warm rose with magenta glow. Conveys
+// "luxury evening, more than just basics".
+const PALETTE_SUNSET: TierPalette = {
+  bg: '#C45A8E',
+  glowA: '#E07083',
+  glowB: '#F4B5D2',
+  highlight: 'rgba(255,235,225,0.18)',
+  shadow: '#7A2D55',
+  borderActive: '#FCEAD3',
+  border: 'rgba(255,234,211,0.35)',
+  textPrimary: '#FFF4E8',
+  textBody: '#FCE5D7',
+  badgeBg: '#FFF3EA',
+  badgeText: '#7A2D55',
+  buttonBg: '#FFF4E8',
+  buttonText: '#7A2D55',
+};
+
 interface MysteryTierCardProps {
   title: string;
   price: string;
   body: string;
   buttonLabel: string;
-  tint: string;
-  glow: string;
+  badgeLabel?: string;
+  features?: string[];
+  palette: TierPalette;
   active?: boolean;
   onPress: () => void;
 }
@@ -46,8 +110,9 @@ const MysteryTierCard: React.FC<MysteryTierCardProps> = ({
   price,
   body,
   buttonLabel,
-  tint,
-  glow,
+  badgeLabel,
+  features,
+  palette,
   active,
   onPress,
 }) => {
@@ -56,20 +121,92 @@ const MysteryTierCard: React.FC<MysteryTierCardProps> = ({
       style={[
         stylesShared.card,
         {
-          backgroundColor: tint,
-          shadowColor: glow,
-          borderColor: active ? BUTTON_ACCENT : 'rgba(255,255,255,0.35)',
+          backgroundColor: palette.bg,
+          shadowColor: palette.shadow,
+          borderColor: active ? palette.borderActive : palette.border,
           borderWidth: active ? 1.5 : 1,
+          overflow: 'hidden',
         },
       ]}
     >
+      <View
+        style={[
+          stylesShared.premiumGlowA,
+          { backgroundColor: palette.glowA, opacity: 0.75 },
+        ]}
+      />
+      <View
+        style={[
+          stylesShared.premiumGlowB,
+          { backgroundColor: palette.glowB, opacity: 0.55 },
+        ]}
+      />
+      <View
+        style={[
+          stylesShared.tierHighlight,
+          { backgroundColor: palette.highlight },
+        ]}
+      />
+      {badgeLabel ? (
+        <View style={stylesShared.premiumBadgeRow}>
+          <View
+            style={[
+              stylesShared.premiumBadge,
+              { backgroundColor: palette.badgeBg },
+            ]}
+          >
+            <Text
+              style={[
+                stylesShared.premiumBadgeText,
+                { color: palette.badgeText },
+              ]}
+            >
+              {badgeLabel}
+            </Text>
+          </View>
+        </View>
+      ) : null}
       <View style={stylesShared.cardTopRow}>
-        <Text style={stylesShared.cardTitle}>{title}</Text>
-        <Text style={stylesShared.cardPrice}>{price}</Text>
+        <Text style={[stylesShared.cardTitle, { color: palette.textPrimary }]}>
+          {title}
+        </Text>
+        <Text style={[stylesShared.cardPrice, { color: palette.textPrimary }]}>
+          {price}
+        </Text>
       </View>
-      <Text style={stylesShared.cardBody}>{body}</Text>
-      <Pressable style={stylesShared.cardButton} onPress={onPress}>
-        <Text style={stylesShared.cardButtonText}>{buttonLabel}</Text>
+      <Text style={[stylesShared.cardBody, { color: palette.textBody }]}>
+        {body}
+      </Text>
+      {features && features.length > 0 ? (
+        <View style={stylesShared.featureList}>
+          {features.map((line) => (
+            <Text
+              key={line}
+              style={[
+                stylesShared.featureLine,
+                { color: palette.textBody },
+              ]}
+            >
+              ✦ {line}
+            </Text>
+          ))}
+        </View>
+      ) : null}
+      <Pressable
+        style={[
+          stylesShared.cardButton,
+          { backgroundColor: palette.buttonBg },
+        ]}
+        onPress={onPress}
+      >
+        <Text
+          style={[
+            stylesShared.cardButtonText,
+            { color: palette.buttonText },
+          ]}
+        >
+          {buttonLabel}
+        </Text>
       </Pressable>
     </View>
   );
@@ -294,10 +431,15 @@ export const SubscriptionScreen: React.FC = () => {
         <MysteryTierCard
           title="Твой ритм"
           price="999₽/мес"
-          tint={colors.card}
-          glow="#D8BDEB"
+          badgeLabel="Базовый бокс"
+          palette={PALETTE_DAWN}
           active={isActive && tier === 'basic'}
-          body="Каждый месяц перед началом цикла курьер приносит загадочную коробку. Внутри – твои выбранные средства гигиены, вкусный комплимент и ритуал ухода. Состав меняется, опираясь на твой профиль, аллергии, сезон и фазу. Мы не повторяемся. Ты узнаешь наполнение, только открыв коробку."
+          body="Каждый месяц перед началом цикла курьер приносит загадочную коробку. Внутри — твои выбранные средства гигиены, вкусный комплимент и ритуал ухода."
+          features={[
+            'Подбор по твоему профилю и аллергиям',
+            'Состав меняется каждый месяц',
+            'Доставка к началу цикла',
+          ]}
           buttonLabel="Выбрать ритм"
           onPress={openBot}
         />
@@ -305,10 +447,16 @@ export const SubscriptionScreen: React.FC = () => {
         <MysteryTierCard
           title="Полная симфония"
           price="1999₽/мес"
-          tint={colors.surface}
-          glow="#C9B5FF"
+          badgeLabel="Премиум-бокс"
+          palette={PALETTE_SUNSET}
           active={isActive && tier === 'vip'}
-          body="Расширенная тайна для тех, кто хочет больше заботы и сюрпризов. Органические средства гигиены, гастрономический подарок ручной работы, ритуалы ухода для лица, тела и души, чайная церемония и тайный презент. Плюс персональные гайды и медитации в приложении. Бесплатная доставка к началу цикла. Мы собираем этот бокс в абсолютной тишине, зная о тебе больше, чем ты думаешь. Открой – и почувствуй мелодию заботы, написанную только для тебя."
+          body="Расширенная тайна для тех, кто хочет больше заботы. Органическая гигиена, гастрономический подарок ручной работы, ритуалы ухода и персональные гайды в приложении."
+          features={[
+            'Органические средства гигиены',
+            'Чайная церемония и тайный презент',
+            'Гайды и медитации в приложении',
+            'Бесплатная доставка к началу цикла',
+          ]}
           buttonLabel="Выбрать симфонию"
           onPress={openBot}
         />
@@ -413,6 +561,17 @@ const stylesShared = StyleSheet.create({
     borderRadius: 90,
     bottom: -60,
     left: -40,
+  },
+  // Soft top highlight that gives the card a subtle "glassy" sheen on
+  // top of the colored glow blobs.
+  tierHighlight: {
+    position: 'absolute',
+    left: 12,
+    right: 12,
+    top: 10,
+    height: 2,
+    borderRadius: 2,
+    opacity: 0.8,
   },
   premiumBadgeRow: {
     flexDirection: 'row',
