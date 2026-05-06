@@ -16,8 +16,7 @@ import { useApp } from '../AppContext';
 import { useSubscription } from '../hooks/useSubscription';
 import { SERIF_STACK, WaveBackground } from '../components/WaveBackground';
 import { ThemeColors } from '../theme';
-
-const TELEGRAM_BOT_URL = 'https://t.me/lowerBsk24_bot?start=manage';
+import { buildTelegramLinkUrl } from '../utils/subscription';
 
 export const ManageSubscriptionScreen: React.FC = () => {
   const { colors, t, language } = useApp();
@@ -44,10 +43,13 @@ export const ManageSubscriptionScreen: React.FC = () => {
           ? 'Lira Premium'
           : t('manage.tierFree');
 
-  const onOpenBot = () => {
-    Linking.openURL(TELEGRAM_BOT_URL).catch(() => {
-      Alert.alert(t('subscription.botUnavailableTitle'), TELEGRAM_BOT_URL);
-    });
+  const onOpenBot = async () => {
+    try {
+      const url = await buildTelegramLinkUrl();
+      await Linking.openURL(url);
+    } catch {
+      Alert.alert(t('subscription.botUnavailableTitle'), '@lowerBsk24_bot');
+    }
   };
 
   return (

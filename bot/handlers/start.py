@@ -22,19 +22,19 @@ router = Router(name="start")
 
 
 WELCOME = (
-    "Привет, я <b>Flow</b> 🌸\n\n"
-    "Я помогу собрать персональный <b>бокс заботы</b> — каждый месяц "
-    "к датам М тебе будет приезжать коробка со средствами гигиены, "
-    "уходом и приятностями. Подобрано лично под тебя: твои "
-    "предпочтения, аллергии, образ жизни и фаза цикла.\n\n"
-    "Также есть <b>Lira Premium</b> — цифровой тариф 199 ₽/мес: "
-    "расширенная аналитика, прогноз овуляции, экспорт PDF/CSV, гайды. "
-    "Без бокса и без опросника — оплатил, получил код активации, "
-    "ввёл в приложении.\n\n"
-    "Для бокса сначала зададу несколько вопросов (можно прерваться и "
-    "вернуться позже — твои ответы сохраняются), потом покажу тарифы и "
-    "оформим подписку через Telegram-оплату. После оплаты дам код для "
-    "приложения."
+    "Привет, я <b>Lira BOX</b> 🌸\n\n"
+    "Выбери тариф — после оплаты подписка автоматически активируется в "
+    "приложении Lira (никаких кодов вводить не нужно).\n\n"
+    "✨ <b>Lira Premium — 199 ₽/мес</b>\n"
+    "Цифровой тариф без бокса и без опросника: расширенная аналитика, "
+    "прогноз овуляции, экспорт PDF/CSV, гайды.\n\n"
+    "🌸 <b>Твой ритм — 999 ₽/мес</b>\n"
+    "Персональный бокс: гигиена, уход, шоколад. До 5 предметов. "
+    "Сначала короткий опросник.\n\n"
+    "💎 <b>Полная симфония — 1 999 ₽/мес</b>\n"
+    "Расширенный бокс: органика, шоколад ручной работы, 3 средства "
+    "ухода, чай, гайды. До 8 предметов + сюрприз.\n\n"
+    "📦 <b>Мой бокс</b> — статус подписки и ближайшая доставка."
 )
 
 
@@ -135,18 +135,25 @@ def _consent_keyboard() -> InlineKeyboardMarkup:
 
 
 def _welcome_keyboard() -> InlineKeyboardMarkup:
+    """Main menu — exactly 4 entry points the user requested."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="✨ Lira Premium — 199₽/мес",
-                    callback_data="premium:buy",
+                    text="✨ Lira Premium — 199 ₽",
+                    callback_data="tariff:premium",
                 )
             ],
             [
                 InlineKeyboardButton(
-                    text="📦 Бокс заботы (опросник)",
-                    callback_data="onboarding:start",
+                    text="🌸 Твой ритм — 999 ₽",
+                    callback_data="tariff:basic",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="💎 Полная симфония — 1 999 ₽",
+                    callback_data="tariff:vip",
                 )
             ],
             [
@@ -207,15 +214,50 @@ async def on_start_premium(message: Message, state: FSMContext) -> None:
     await _send_premium_invoice(message, state)
 
 
-@router.callback_query(F.data == "premium:buy")
-async def on_premium_buy(cb: CallbackQuery, state: FSMContext) -> None:
-    if cb.message is None:
+@router.message(CommandStart(deep_link=True), F.text.regexp(r"^/start\s+link_"))
+async def on_start_link(message: Message, state: FSMContext) -> None:
+    """Deep link from the app: bind device_id ↔ telegram user, then resume welcome.
+
+    Triggered when the user taps "Синхронизация с Telegram" inside Lira;
+    the app opens ``t.me/<bot>?start=link_<device_id>``. We store the
+    device_id on the User row so the app can later look up subscription
+    status by GET /v1/subscription?device_id=…, no manual codes needed.
+    """
+    await state.clear()
+    if message.from_user is None or message.text is None:
+        return
+    parts = message.text.split(maxsplit=1)
+    payload = parts[1] if len(parts) > 1 else ""
+    if not payload.startswith("link_"):
+        await _show_welcome(message)
+        return
+    device_id = payload[len("link_"):].strip()[:128]
+    if not device_id:
+        await _show_welcome(message)
+        return
+    async with session_scope() as session:
+        user = await get_or_create_user(session, message.from_user)
+        user.device_id = device_id
+        accepted = user.pd_consent_at is not None
+    await message.answer(
+        "🔗 <b>Приложение Lira подключено к этому Telegram.</b>\n\n"
+        "Теперь после оплаты подписка автоматически активируется в "
+        "приложении — никаких кодов вводить не нужно.",
+        parse_mode="HTML",
+    )
+    if not accepted:
+        await _show_consent(message, state, pending="welcome")
+        return
+    await _show_welcome(message)
+
+
+@router.callback_query(F.data == "tariff:premium")
+async def on_welcome_premium(cb: CallbackQuery, state: FSMContext) -> None:
+    """Welcome-menu button → straight to Premium invoice (no survey)."""
+    if cb.message is None or cb.from_user is None:
         await cb.answer()
         return
     await state.clear()
-    if cb.from_user is None:
-        await cb.answer()
-        return
     async with session_scope() as session:
         user = await get_or_create_user(session, cb.from_user)
         accepted = user.pd_consent_at is not None
@@ -229,6 +271,55 @@ async def on_premium_buy(cb: CallbackQuery, state: FSMContext) -> None:
         return
     await _send_premium_invoice(cb.message, state)
     await cb.answer()
+
+
+@router.callback_query(F.data.in_({"tariff:basic", "tariff:vip"}))
+async def on_welcome_box_tariff(cb: CallbackQuery, state: FSMContext) -> None:
+    """Welcome-menu Basic / VIP button → start the questionnaire with the
+    chosen tariff preselected. After the last step, ``onboarding`` will
+    push the invoice directly using the saved ``_tariff`` value."""
+    if cb.message is None or cb.from_user is None:
+        await cb.answer()
+        return
+    tariff_value = (cb.data or "").split(":", 1)[1]
+    await state.clear()
+    pending = "tariff_basic" if tariff_value == "basic" else "tariff_vip"
+    async with session_scope() as session:
+        user = await get_or_create_user(session, cb.from_user)
+        accepted = user.pd_consent_at is not None
+    try:
+        await cb.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+    if not accepted:
+        await _show_consent(cb.message, state, pending=pending)
+        await cb.answer()
+        return
+    await _start_box_onboarding(cb.message, state, tariff_value)
+    await cb.answer()
+
+
+async def _start_box_onboarding(
+    message: Message, state: FSMContext, tariff_value: str
+) -> None:
+    """Kick off the box questionnaire with the preselected tariff value
+    saved in FSM state. Last step of `onboarding.py` reads ``_tariff`` and
+    sends the invoice directly."""
+    from bot.handlers.onboarding import _ensure_profile  # type: ignore[attr-defined]
+
+    await _ensure_profile(message)
+    await state.set_state(Onboarding.name)
+    await state.update_data(_tariff=tariff_value)
+    label = "Твой ритм" if tariff_value == "basic" else "Полная симфония"
+    price = "999" if tariff_value == "basic" else "1 999"
+    await message.answer(
+        f"Отлично! Тариф <b>{label}</b> ({price} ₽/мес).\n\n"
+        "Сначала пройдём короткий опросник (7 шагов), чтобы я могла "
+        "собрать твой персональный бокс. Можно прерваться и вернуться "
+        "позже — ответы сохраняются.\n\n"
+        "<b>Шаг 1/7. Как тебя зовут?</b>",
+        parse_mode="HTML",
+    )
 
 
 async def _send_premium_invoice(message: Message, state: FSMContext) -> None:
@@ -301,6 +392,10 @@ async def on_consent_accept(cb: CallbackQuery, state: FSMContext) -> None:
     await state.update_data(_consent_pending=None)
     if pending == "premium":
         await _send_premium_invoice(cb.message, state)
+    elif pending == "tariff_basic":
+        await _start_box_onboarding(cb.message, state, "basic")
+    elif pending == "tariff_vip":
+        await _start_box_onboarding(cb.message, state, "vip")
     else:
         await _show_welcome(cb.message)
     await cb.answer()

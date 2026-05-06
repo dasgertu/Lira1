@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Linking,
@@ -6,10 +6,8 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
-import * as Clipboard from 'expo-clipboard';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -17,16 +15,15 @@ import { format, parseISO } from 'date-fns';
 import { ru } from 'date-fns/locale';
 
 import { useApp } from '../AppContext';
-import { findPeriodStarts } from '../cycle';
-import { encodeCycleCode } from '../cycleCode';
 import { useSubscription } from '../hooks/useSubscription';
 import { RootStackParamList } from '../navigation';
 import { SERIF_STACK, WaveBackground } from '../components/WaveBackground';
 import { ThemeColors } from '../theme';
+import { buildTelegramLinkUrl } from '../utils/subscription';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
-const TELEGRAM_BOT_URL = 'https://t.me/lowerBsk24_bot?start=subscription';
+const BOT_USERNAME = 'lowerBsk24_bot';
 const BUTTON_ACCENT = '#8267E6';
 
 interface MysteryTierCardProps {
@@ -163,63 +160,31 @@ const PremiumCard: React.FC<PremiumCardProps> = ({ active, onPress, colors }) =>
 };
 
 export const SubscriptionScreen: React.FC = () => {
-  const { colors, data } = useApp();
+  const { colors } = useApp();
   const {
     subscription,
     tier,
     isActive,
     isPremium,
     daysLeft,
-    activate,
+    refresh,
   } = useSubscription();
   const navigation = useNavigation<Nav>();
   const styles = useMemo(() => makeStyles(colors), [colors]);
-  const [code, setCode] = useState('');
-  const [submitting, setSubmitting] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [linkUrl, setLinkUrl] = useState<string | null>(null);
 
-  const syncInfo = useMemo(() => {
-    const starts = findPeriodStarts(data.logs);
-    const startDate = starts.length > 0 ? starts[starts.length - 1] : null;
-    if (!startDate) return null;
-    try {
-      const code = encodeCycleCode({
-        startDate,
-        cycleLength: data.settings.averageCycleLength,
-        periodLength: data.settings.averagePeriodLength,
-      });
-      const periodLength = Math.max(1, data.settings.averagePeriodLength);
-      const endIso = (() => {
-        const d = new Date(`${startDate}T00:00:00Z`);
-        d.setUTCDate(d.getUTCDate() + periodLength - 1);
-        return d.toISOString().slice(0, 10);
-      })();
-      const fmtDate = (iso: string) => {
-        const [y, m, day] = iso.split('-');
-        return `${day}.${m}.${y}`;
-      };
-      return {
-        code,
-        startLabel: fmtDate(startDate),
-        endLabel: fmtDate(endIso),
-      };
-    } catch {
-      return null;
-    }
-  }, [data.logs, data.settings.averageCycleLength, data.settings.averagePeriodLength]);
-  const syncCode = syncInfo?.code ?? null;
-
-  const copySyncCode = async () => {
-    if (!syncCode) return;
-    try {
-      await Clipboard.setStringAsync(syncCode);
-      Alert.alert(
-        'Скопировано',
-        `Открой Lira BOX и пришли ему сообщение:\n/sync ${syncCode}`,
-      );
-    } catch {
-      Alert.alert('Не удалось скопировать', syncCode);
-    }
-  };
+  // Resolve the Telegram deep-link once so the "Sync with Telegram" CTA
+  // can open it without async work on press.
+  useEffect(() => {
+    let cancelled = false;
+    void buildTelegramLinkUrl().then((url) => {
+      if (!cancelled) setLinkUrl(url);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const fmtDate = (iso: string | null): string => {
     if (!iso) return '—';
@@ -230,10 +195,11 @@ export const SubscriptionScreen: React.FC = () => {
     }
   };
 
+  // All "open bot" entry points now go through the link deep link so the
+  // device_id is bound on first contact. The user no longer needs to copy
+  // any activation code by hand.
   const openBot = () => {
-    Linking.openURL(TELEGRAM_BOT_URL).catch(() => {
-      Alert.alert('Не получилось открыть Telegram', TELEGRAM_BOT_URL);
-    });
+    void openSyncWithTelegram();
   };
 
   const onPressPremium = () => {
@@ -241,40 +207,35 @@ export const SubscriptionScreen: React.FC = () => {
       navigation.navigate('ManageSubscription');
       return;
     }
-    const url = 'https://t.me/lowerBsk24_bot?start=premium';
-    Linking.openURL(url).catch(() => {
-      Alert.alert('Не получилось открыть Telegram', url);
-    });
+    void openSyncWithTelegram();
   };
 
-  const onActivate = async () => {
-    setSubmitting(true);
+  // Open the bot via the link_<deviceid> deep link. Once the user taps
+  // "Open" inside Telegram and the bot responds, the device is bound to
+  // their Telegram account; the auto-poll inside useSubscription picks
+  // up the active subscription within ~30s after they pay.
+  const openSyncWithTelegram = async () => {
+    setSyncing(true);
     try {
-      const res = await activate(code);
-      if (res.ok) {
-        setCode('');
-        const tariffName =
-          res.tier === 'vip'
-            ? 'Полная симфония'
-            : res.tier === 'basic'
-              ? 'Твой ритм'
-              : 'Lira Premium';
+      const url = linkUrl ?? (await buildTelegramLinkUrl());
+      const can = await Linking.canOpenURL(url);
+      if (!can) {
         Alert.alert(
-          'Подписка активирована',
-          `Тариф: ${tariffName}. Действует до ${fmtDate(`${res.expires}T00:00:00.000Z`)}.`,
+          'Не получилось открыть Telegram',
+          'Открой бота вручную: @' + BOT_USERNAME,
         );
         return;
       }
-      if (res.reason === 'empty') {
-        Alert.alert('Введи код', 'Скопируй код из сообщения бота и вставь сюда.');
-        return;
-      }
-      Alert.alert(
-        'Код не найден',
-        'Проверь, что ввела код полностью и без пробелов. Если код правильный — напиши боту.',
-      );
+      await Linking.openURL(url);
+      // After the user comes back we proactively refresh status. The
+      // 30s poll will keep checking too.
+      setTimeout(() => {
+        void refresh();
+      }, 4000);
+    } catch {
+      Alert.alert('Не получилось открыть Telegram', BOT_USERNAME);
     } finally {
-      setSubmitting(false);
+      setSyncing(false);
     }
   };
 
@@ -338,73 +299,38 @@ export const SubscriptionScreen: React.FC = () => {
         />
 
         <View style={styles.codeCard}>
-          <Text style={styles.codeTitle}>Код синхронизации цикла</Text>
+          <Text style={styles.codeTitle}>Синхронизация с Telegram</Text>
           <Text style={styles.codeHint}>
-            Внутри кода — <Text style={{ fontWeight: '700' }}>дата начала</Text> и{' '}
-            <Text style={{ fontWeight: '700' }}>дата конца</Text> твоих последних
-            месячных и средняя длина цикла. Это{' '}
-            <Text style={{ fontWeight: '700' }}>не</Text> код активации подписки —
-            нужен, чтобы Lira BOX знал, когда отправить тебе коробку.
+            Открой Lira BOX в Telegram — выбери тариф и оплати. Подписка{' '}
+            <Text style={{ fontWeight: '700' }}>автоматически</Text> подтянется
+            в приложение, никаких кодов вводить не нужно.
           </Text>
-          {syncCode && syncInfo ? (
-            <>
-              <View style={styles.syncBadge}>
-                <Text style={styles.syncBadgeText}>{syncCode}</Text>
-              </View>
-              <Text style={[styles.codeHint, { textAlign: 'center', marginTop: 8 }]}>
-                Месячные: {syncInfo.startLabel} → {syncInfo.endLabel}
-              </Text>
-              <Pressable style={styles.activateButton} onPress={copySyncCode}>
-                <Text style={styles.activateButtonText}>
-                  Скопировать код
-                </Text>
-              </Pressable>
-              <Pressable
-                style={[
-                  styles.activateButton,
-                  { marginTop: 10, backgroundColor: 'transparent', borderWidth: 1, borderColor: BUTTON_ACCENT },
-                ]}
-                onPress={() => {
-                  const url = `https://t.me/lowerBsk24_bot?start=sync_${encodeURIComponent(syncCode)}`;
-                  Linking.openURL(url).catch(() => {
-                    Alert.alert('Не получилось открыть Telegram', url);
-                  });
-                }}
-              >
-                <Text style={[styles.activateButtonText, { color: BUTTON_ACCENT }]}>
-                  Открыть Lira BOX
-                </Text>
-              </Pressable>
-            </>
-          ) : (
-            <Text style={styles.codeHint}>
-              Сначала отметь день начала последних месячных в календаре или на
-              экране «Сегодня». Тогда здесь появится твой код.
-            </Text>
-          )}
-        </View>
-
-        <View style={styles.codeCard}>
-          <Text style={styles.codeTitle}>Код активации</Text>
-          <Text style={styles.codeHint}>
-            Бот пришлёт его после оплаты. Введи код, чтобы активировать подписку в приложении.
-          </Text>
-          <TextInput
-            style={styles.codeInput}
-            placeholder="Например, A7K9TXM2"
-            placeholderTextColor={colors.textMuted}
-            autoCapitalize="characters"
-            autoCorrect={false}
-            value={code}
-            onChangeText={(value) => setCode(value.toUpperCase())}
-            editable={!submitting}
-          />
           <Pressable
-            style={[styles.activateButton, submitting && { opacity: 0.6 }]}
-            onPress={onActivate}
-            disabled={submitting}
+            style={[styles.activateButton, syncing && { opacity: 0.6 }]}
+            onPress={() => void openSyncWithTelegram()}
+            disabled={syncing}
           >
-            <Text style={styles.activateButtonText}>Активировать</Text>
+            <Text style={styles.activateButtonText}>
+              {syncing ? 'Открываю Telegram…' : 'Открыть Lira BOX в Telegram'}
+            </Text>
+          </Pressable>
+          <Pressable
+            style={[
+              styles.activateButton,
+              {
+                marginTop: 10,
+                backgroundColor: 'transparent',
+                borderWidth: 1,
+                borderColor: BUTTON_ACCENT,
+              },
+            ]}
+            onPress={() => void refresh()}
+          >
+            <Text
+              style={[styles.activateButtonText, { color: BUTTON_ACCENT }]}
+            >
+              Обновить статус подписки
+            </Text>
           </Pressable>
         </View>
       </ScrollView>

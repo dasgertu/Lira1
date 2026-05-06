@@ -1,8 +1,8 @@
 import { differenceInCalendarDays, isBefore, parseISO } from 'date-fns';
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useApp } from '../AppContext';
 import { DEFAULT_SUBSCRIPTION, Subscription, SubscriptionTier } from '../types';
-import { activateCode } from '../utils/activation';
+import { fetchSubscriptionStatus } from '../utils/subscription';
 
 export type SubscriptionType = 'premium' | 'basic_box' | 'vip_box' | 'none';
 
@@ -20,13 +20,11 @@ export interface UseSubscriptionApi {
   isBoxActive: boolean;
   daysLeft: number;
   /**
-   * Send the user-entered activation code to the FlowCare API. On success
-   * persists tier + renewsAt locally and returns the resolved tier.
+   * Force a refresh of subscription status against the API (using the
+   * locally-stored device_id). Returns the resolved tier or ``null`` if
+   * the device is not yet linked / no active subscription.
    */
-  activate: (code: string) => Promise<
-    | { ok: true; tier: SubscriptionTier; expires: string }
-    | { ok: false; reason: 'empty' | 'invalid' | 'network' }
-  >;
+  refresh: () => Promise<SubscriptionTier | null>;
 }
 
 const isActiveNow = (sub: Subscription, now = new Date()): boolean => {
@@ -48,17 +46,21 @@ const computeDaysLeft = (sub: Subscription, now = new Date()): number => {
   }
 };
 
+const POLL_INTERVAL_MS = 30_000;
+
 /**
  * Subscription state hook.
  *
- * Source of truth: the FlowCare backend (`./api/`) which is fed by
- * the Telegram bot (`./bot/`). The user pastes the bot-issued
- * activation code into the app; we POST it to /v1/activate and
- * mirror the resulting tier + expires locally.
+ * Source of truth: the FlowCare backend (`./api/`) which is fed by the
+ * Telegram bot (`./bot/`). The user no longer pastes activation codes —
+ * after tapping "Synchronize with Telegram" once, the app polls
+ * ``/v1/subscription?device_id=…`` and mirrors the resulting tier
+ * locally.
  */
 export const useSubscription = (): UseSubscriptionApi => {
   const { data, updateSubscription } = useApp();
   const sub = data.subscription;
+  const lastSyncRef = useRef<number>(0);
 
   useEffect(() => {
     if (sub.tier !== 'free' && sub.renewsAt && !isActiveNow(sub)) {
@@ -66,35 +68,55 @@ export const useSubscription = (): UseSubscriptionApi => {
     }
   }, [sub, updateSubscription]);
 
-  const activate = useCallback<UseSubscriptionApi['activate']>(
-    async (code) => {
-      const trimmed = code.trim();
-      if (!trimmed) return { ok: false, reason: 'empty' };
-      const res = await activateCode(trimmed);
-      if (!res.valid || !res.tariff || !res.expires) {
-        return { ok: false, reason: 'invalid' };
+  const refresh = useCallback<UseSubscriptionApi['refresh']>(async () => {
+    lastSyncRef.current = Date.now();
+    const status = await fetchSubscriptionStatus();
+    if (!status.valid || !status.tariff || !status.expires) {
+      // Device known but no subscription, or device not linked yet — if
+      // we previously had a tier, leave it alone (the local copy may
+      // be ahead of the API). The expiry guard above will downgrade it.
+      return null;
+    }
+    const renewsAtIso = `${status.expires}T00:00:00.000Z`;
+    const nowIso = new Date().toISOString();
+    const productId =
+      status.tariff === 'vip'
+        ? 'vip_monthly'
+        : status.tariff === 'premium'
+          ? 'premium_monthly'
+          : 'basic_monthly';
+    await updateSubscription({
+      tier: status.tariff,
+      productId,
+      startedAt: nowIso,
+      renewsAt: renewsAtIso,
+      cancelled: false,
+      lastSyncedAt: nowIso,
+      activationCode: null,
+    });
+    return status.tariff;
+  }, [updateSubscription]);
+
+  // Auto-poll on mount (and every 30s while mounted). Cheap (~120 bytes
+  // each) and the user expects "I just paid in the bot, the app should
+  // know within seconds".
+  useEffect(() => {
+    let cancelled = false;
+    const tick = async () => {
+      if (cancelled) return;
+      try {
+        await refresh();
+      } catch {
+        // Network errors are silent; we just retry on the next tick.
       }
-      const renewsAtIso = `${res.expires}T00:00:00.000Z`;
-      const nowIso = new Date().toISOString();
-      const productId =
-        res.tariff === 'vip'
-          ? 'vip_monthly'
-          : res.tariff === 'premium'
-            ? 'premium_monthly'
-            : 'basic_monthly';
-      await updateSubscription({
-        tier: res.tariff,
-        productId,
-        startedAt: nowIso,
-        renewsAt: renewsAtIso,
-        cancelled: false,
-        lastSyncedAt: nowIso,
-        activationCode: trimmed,
-      });
-      return { ok: true, tier: res.tariff, expires: res.expires };
-    },
-    [updateSubscription],
-  );
+    };
+    void tick();
+    const id = setInterval(tick, POLL_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [refresh]);
 
   const active = isActiveNow(sub);
   const isBasic = active && sub.tier === 'basic';
@@ -122,6 +144,6 @@ export const useSubscription = (): UseSubscriptionApi => {
     isPremium,
     isBoxActive,
     daysLeft: computeDaysLeft(sub),
-    activate,
+    refresh,
   };
 };

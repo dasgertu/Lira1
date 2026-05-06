@@ -27,6 +27,11 @@ class User(Base):
     # (152-ФЗ). Until this is set, /start shows only the consent screen and
     # blocks access to the questionnaire / Premium invoice.
     pd_consent_at: Mapped[datetime | None] = mapped_column(DateTime, default=None)
+    # Stable identifier of the Lira app installation that the user linked to
+    # this Telegram account via the in-app "Sync with Telegram" button. The
+    # API uses this to answer subscription-status queries from the app
+    # without the user having to copy any activation code by hand.
+    device_id: Mapped[str | None] = mapped_column(String(128), index=True, default=None)
 
     profile: Mapped["Profile | None"] = relationship(
         "Profile", back_populates="user", uselist=False, cascade="all, delete-orphan"

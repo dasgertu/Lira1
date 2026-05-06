@@ -679,9 +679,21 @@ async def _save_address(message: Message, state: FSMContext, field: str) -> None
             await notify_admin_full_profile(
                 message.bot, message.from_user, profile
             )
-        # Step 7
-        await state.set_state(Onboarding.tariff)
-        await _show_tariffs(message)
+        # Survey done. With the new welcome flow the tariff is already
+        # preselected at /start (Твой ритм / Полная симфония) — go straight
+        # to the invoice. Fall back to the picker only if we somehow lost
+        # the preselected value.
+        data = await state.get_data()
+        preselected = data.get("_tariff")
+        if preselected in ("basic", "vip"):
+            from bot.handlers.payment import invoice_for_tariff  # avoid cycle
+            from bot.models import Tariff
+
+            await state.set_state(Onboarding.waiting_payment)
+            await invoice_for_tariff(message, state, Tariff(preselected))
+        else:
+            await state.set_state(Onboarding.tariff)
+            await _show_tariffs(message)
 
 
 # ---- Step 7: tariff selection — defers to payment.py ------------------- #
