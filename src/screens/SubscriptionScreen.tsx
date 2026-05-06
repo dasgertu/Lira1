@@ -302,8 +302,7 @@ export const SubscriptionScreen: React.FC = () => {
           <Text style={styles.codeTitle}>Синхронизация с Telegram</Text>
           <Text style={styles.codeHint}>
             Открой Lira BOX в Telegram — выбери тариф и оплати. Подписка{' '}
-            <Text style={{ fontWeight: '700' }}>автоматически</Text> подтянется
-            в приложение, никаких кодов вводить не нужно.
+            <Text style={{ fontWeight: '700' }}>автоматически активируется</Text>.
           </Text>
           <Pressable
             style={[styles.activateButton, syncing && { opacity: 0.6 }]}
