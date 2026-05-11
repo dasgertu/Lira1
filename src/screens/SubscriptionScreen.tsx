@@ -336,11 +336,43 @@ export const SubscriptionScreen: React.FC = () => {
     }
   };
 
-  // All "open bot" entry points now go through the link deep link so the
-  // device_id is bound on first contact. The user no longer needs to copy
-  // any activation code by hand.
-  const openBot = () => {
-    void openSyncWithTelegram();
+  // Per-tariff CTAs open the bot via a tariff-specific deep link
+  // (`t.me/<bot>?start=<slug>`). On web the lira-pay overlay in
+  // index.html intercepts these calls and runs the entire checkout +
+  // questionnaire in-app instead of bouncing through Telegram. On
+  // native, the link opens the bot which has its own handler for the
+  // slug.
+  const openBotForTariff = (slug: 'premium' | 'basic' | 'vip') => {
+    void (async () => {
+      try {
+        // Push the latest cycle data so the bot can skip the cycle
+        // questions if it ends up being used.
+        const starts = findPeriodStarts(data.logs);
+        const anchor = starts.length > 0 ? starts[starts.length - 1] : null;
+        const episodes = findPeriodEpisodes(data.logs);
+        await pushCyclePayloadToBot({
+          anchorDate: anchor,
+          cycleLength: data.settings.averageCycleLength,
+          periodLength: data.settings.averagePeriodLength,
+          episodes,
+        }).catch(() => undefined);
+        const url = `https://t.me/${BOT_USERNAME}?start=${slug}`;
+        const can = await Linking.canOpenURL(url);
+        if (!can) {
+          Alert.alert(
+            'Не получилось открыть Telegram',
+            'Открой бота вручную: @' + BOT_USERNAME,
+          );
+          return;
+        }
+        await Linking.openURL(url);
+        setTimeout(() => {
+          void refresh();
+        }, 4000);
+      } catch {
+        Alert.alert('Не получилось открыть Telegram', BOT_USERNAME);
+      }
+    })();
   };
 
   const onPressPremium = () => {
@@ -348,7 +380,7 @@ export const SubscriptionScreen: React.FC = () => {
       navigation.navigate('ManageSubscription');
       return;
     }
-    void openSyncWithTelegram();
+    openBotForTariff('premium');
   };
 
   // Open the bot via the link_<deviceid> deep link. Once the user taps
@@ -441,7 +473,7 @@ export const SubscriptionScreen: React.FC = () => {
             'Доставка к началу цикла',
           ]}
           buttonLabel="Выбрать ритм"
-          onPress={openBot}
+          onPress={() => openBotForTariff('basic')}
         />
 
         <MysteryTierCard
@@ -458,7 +490,7 @@ export const SubscriptionScreen: React.FC = () => {
             'Бесплатная доставка к началу цикла',
           ]}
           buttonLabel="Выбрать симфонию"
-          onPress={openBot}
+          onPress={() => openBotForTariff('vip')}
         />
 
         <View style={styles.codeCard}>
