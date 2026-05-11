@@ -471,12 +471,15 @@ export const computeCycleHistory = (
       if (periodLength > 14) break;
     }
 
-    const cycleLogs: DayLog[] = [];
+    const cycleLogPairs: Array<{ date: string; log: DayLog }> = [];
     const cycleEndIso = end ?? fmt(new Date());
     for (const [date, log] of Object.entries(logs)) {
-      if (date >= start && date <= cycleEndIso) cycleLogs.push(log);
+      if (date >= start && date <= cycleEndIso) {
+        cycleLogPairs.push({ date, log });
+      }
     }
-    cycleLogs.sort((a, b) => a.date.localeCompare(b.date));
+    cycleLogPairs.sort((a, b) => a.date.localeCompare(b.date));
+    const cycleLogs: DayLog[] = cycleLogPairs.map((p) => p.log);
 
     entries.push({ start, end, cycleLength, periodLength, logs: cycleLogs });
   }

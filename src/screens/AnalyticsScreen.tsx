@@ -69,8 +69,8 @@ export const AnalyticsScreen: React.FC = () => {
         <ScrollView contentContainerStyle={styles.content}>
           <Text style={styles.h1}>{t('analytics.title')}</Text>
           <PremiumGate
-            feature="Расширенная аналитика"
-            body="Графики цикла, статистика симптомов, средние длины циклов и месячных, irregular-флаг, прогноз овуляции. Открывается с любой подпиской — Premium / Базовая / VIP."
+            feature="Полная статистика и аналитика"
+            body="Графики длины цикла и месячных, средние, тренды, топ симптомов и настроений, график БТТ, фазовая тепловая карта и персональные инсайты. Открывается с любой из трёх подписок."
           />
         </ScrollView>
       </SafeAreaView>

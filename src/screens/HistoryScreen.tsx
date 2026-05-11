@@ -41,7 +41,7 @@ export const HistoryScreen: React.FC = () => {
           <Text style={styles.h1}>{t('history.title')}</Text>
           <PremiumGate
             feature="История циклов"
-            body="Полная летопись твоих циклов: длительности, симптомы, кратко и по фазам. Открывается с любой подпиской — Premium / Базовая / VIP."
+            body="Полная летопись циклов: длительности, симптомы, фазы и экспорт в PDF. Открывается с любой из трёх подписок."
           />
         </ScrollView>
       </SafeAreaView>
