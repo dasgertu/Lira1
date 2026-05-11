@@ -588,11 +588,8 @@ const MiniCalendar: React.FC<MiniCalendarProps> = ({
   const todayLabel = t('onboarding.pickToday');
   const styles = makeStyles(colors);
   const today = new Date();
-  const anchor = addMonths(today, monthOffset);
-  const cells = useMemo(() => buildMonthGrid(anchor), [anchor]);
   const months = tArray('months');
   const weekdays = tArray('weekdays');
-  const monthLabel = `${months[anchor.getMonth()] ?? ''} ${anchor.getFullYear()}`;
   const selectedDate = selected ? parseISO(selected) : null;
   const rangeStartDate = rangeStart ? parseISO(rangeStart) : null;
   const rangeEndDate = rangeEnd ? parseISO(rangeEnd) : null;
@@ -601,6 +598,84 @@ const MiniCalendar: React.FC<MiniCalendarProps> = ({
     a.getDate() === b.getDate() &&
     a.getMonth() === b.getMonth() &&
     a.getFullYear() === b.getFullYear();
+
+  // Render two months at once: the previous month (so cross-month ranges like
+  // "28 April → 2 May" can be picked without using the « ‹ › » navigation)
+  // and the currently selected month underneath. The chevrons still let the
+  // user shift the window further back if they need an older period.
+  const renderMonth = (offset: number) => {
+    const anchor = addMonths(today, offset);
+    const cells = buildMonthGrid(anchor);
+    const monthLabel = `${months[anchor.getMonth()] ?? ''} ${anchor.getFullYear()}`;
+    return (
+      <View key={`m${offset}`} style={styles.calMonthBox}>
+        <Text style={styles.calMonth}>{monthLabel}</Text>
+        <View style={styles.calWeekRow}>
+          {weekdays.map((w) => (
+            <Text key={w} style={styles.calWeek}>
+              {w}
+            </Text>
+          ))}
+        </View>
+        <View style={styles.calGrid}>
+          {cells.map((d, i) => {
+            if (!d) return <View key={`e${offset}-${i}`} style={styles.calCellEmpty} />;
+            const iso = format(d, 'yyyy-MM-dd');
+            const isFuture =
+              isAfter(d, today) ||
+              (maxIso ? iso >= maxIso : false);
+            const isSingleSelected =
+              !isRangeMode && selectedDate && sameDay(d, selectedDate);
+            const isRangeStart =
+              isRangeMode && rangeStartDate && sameDay(d, rangeStartDate);
+            const isRangeEnd =
+              isRangeMode && rangeEndDate && sameDay(d, rangeEndDate);
+            const isInRange =
+              isRangeMode &&
+              rangeStartDate &&
+              rangeEndDate &&
+              d.getTime() > rangeStartDate.getTime() &&
+              d.getTime() < rangeEndDate.getTime();
+            const isSelected = isSingleSelected || isRangeStart || isRangeEnd;
+            const onPress = () => {
+              if (isRangeMode) onRangePick?.(iso);
+              else onSelect?.(iso);
+            };
+            return (
+              <Pressable
+                key={iso}
+                disabled={isFuture}
+                onPress={onPress}
+                style={[
+                  styles.calCell,
+                  isInRange && {
+                    backgroundColor: colors.fertile,
+                    borderColor: colors.fertile,
+                  },
+                  isSelected && {
+                    backgroundColor: colors.period,
+                    borderColor: colors.period,
+                  },
+                  isFuture && { opacity: 0.25 },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.calCellText,
+                    isInRange && { color: colors.text, fontWeight: '600' },
+                    isSelected && { color: colors.primaryText, fontWeight: '700' },
+                  ]}
+                >
+                  {d.getDate()}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      </View>
+    );
+  };
+
   return (
     <View style={styles.calBox}>
       <View style={styles.calHeader}>
@@ -616,7 +691,9 @@ const MiniCalendar: React.FC<MiniCalendarProps> = ({
         >
           <Text style={styles.calNavText}>‹</Text>
         </Pressable>
-        <Text style={styles.calMonth}>{monthLabel}</Text>
+        <Text style={styles.calNavSpan}>
+          {`${months[addMonths(today, monthOffset - 1).getMonth()] ?? ''} — ${months[addMonths(today, monthOffset).getMonth()] ?? ''} ${addMonths(today, monthOffset).getFullYear()}`}
+        </Text>
         <Pressable
           style={styles.calNav}
           onPress={() => {
@@ -635,69 +712,8 @@ const MiniCalendar: React.FC<MiniCalendarProps> = ({
           <Text style={[styles.calNavText, monthOffset >= 0 && { opacity: 0.3 }]}>»</Text>
         </Pressable>
       </View>
-      <View style={styles.calWeekRow}>
-        {weekdays.map((w) => (
-          <Text key={w} style={styles.calWeek}>
-            {w}
-          </Text>
-        ))}
-      </View>
-      <View style={styles.calGrid}>
-        {cells.map((d, i) => {
-          if (!d) return <View key={`e${i}`} style={styles.calCellEmpty} />;
-          const iso = format(d, 'yyyy-MM-dd');
-          const isFuture =
-            isAfter(d, today) ||
-            (maxIso ? iso >= maxIso : false);
-          const isSingleSelected =
-            !isRangeMode && selectedDate && sameDay(d, selectedDate);
-          const isRangeStart =
-            isRangeMode && rangeStartDate && sameDay(d, rangeStartDate);
-          const isRangeEnd =
-            isRangeMode && rangeEndDate && sameDay(d, rangeEndDate);
-          const isInRange =
-            isRangeMode &&
-            rangeStartDate &&
-            rangeEndDate &&
-            d.getTime() > rangeStartDate.getTime() &&
-            d.getTime() < rangeEndDate.getTime();
-          const isSelected =
-            isSingleSelected || isRangeStart || isRangeEnd;
-          const onPress = () => {
-            if (isRangeMode) onRangePick?.(iso);
-            else onSelect?.(iso);
-          };
-          return (
-            <Pressable
-              key={iso}
-              disabled={isFuture}
-              onPress={onPress}
-              style={[
-                styles.calCell,
-                isInRange && {
-                  backgroundColor: colors.fertile,
-                  borderColor: colors.fertile,
-                },
-                isSelected && {
-                  backgroundColor: colors.period,
-                  borderColor: colors.period,
-                },
-                isFuture && { opacity: 0.25 },
-              ]}
-            >
-              <Text
-                style={[
-                  styles.calCellText,
-                  isInRange && { color: colors.text, fontWeight: '600' },
-                  isSelected && { color: colors.primaryText, fontWeight: '700' },
-                ]}
-              >
-                {d.getDate()}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
+      {renderMonth(monthOffset - 1)}
+      {renderMonth(monthOffset)}
       {onPickToday ? (
         <Pressable style={styles.todayBtn} onPress={onPickToday}>
           <Text style={styles.todayBtnText}>{todayLabel}</Text>
@@ -1022,7 +1038,21 @@ const makeStyles = (colors: ThemeColors) =>
     },
     calNav: { padding: 8 },
     calNavText: { fontSize: 24, color: colors.text },
-    calMonth: { fontSize: 16, fontWeight: '600', color: colors.text },
+    calNavSpan: {
+      flex: 1,
+      textAlign: 'center',
+      fontSize: 13,
+      fontWeight: '600',
+      color: colors.textMuted,
+    },
+    calMonthBox: { marginBottom: 12 },
+    calMonth: {
+      fontSize: 15,
+      fontWeight: '700',
+      color: colors.text,
+      textAlign: 'center',
+      marginBottom: 8,
+    },
     calWeekRow: { flexDirection: 'row', marginBottom: 4 },
     calWeek: {
       flex: 1,

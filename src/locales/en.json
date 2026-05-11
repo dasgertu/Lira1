@@ -151,7 +151,7 @@
     "pinTooShort": "PIN must be 4–6 digits",
     "pinMismatch": "PINs don't match",
     "lastPeriodTitle": "When was your last period?",
-    "lastPeriodHint": "Tap the start day, then the end day. If your period is still ongoing, you can choose only the first day and tap Next. ‹ › — month, « » — year.",
+    "lastPeriodHint": "Tap the start day, then the end day — even if they fall in different months: the previous and current months are shown together. If your period is still ongoing, pick only the first day and tap Next. ‹ › — scroll months, « » — years.",
     "rangeFrom": "Start",
     "rangeTo": "End",
     "rangeNotPicked": "—",
