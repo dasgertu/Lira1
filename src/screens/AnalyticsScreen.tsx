@@ -67,7 +67,7 @@ export const AnalyticsScreen: React.FC = () => {
       <SafeAreaView style={styles.safe} edges={['top']}>
         <WaveBackground colors={colors} />
         <ScrollView contentContainerStyle={styles.content}>
-          <Text style={styles.h1}>{t('analytics.title')}</Text>
+          <Text style={styles.h1}>{t('tabs.stats')}</Text>
           <PremiumGate
             feature="Полная статистика и аналитика"
             body="Графики длины цикла и месячных, средние, тренды, топ симптомов и настроений, график БТТ, фазовая тепловая карта и персональные инсайты. Открывается с любой из трёх подписок."
@@ -89,7 +89,7 @@ export const AnalyticsScreen: React.FC = () => {
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.headerRow}>
           <View style={{ flex: 1 }}>
-            <Text style={styles.h1}>{t('analytics.title')}</Text>
+            <Text style={styles.h1}>{t('tabs.stats')}</Text>
             <Text style={styles.h1Sub}>{t('analytics.sectionTrends')}</Text>
           </View>
         </View>

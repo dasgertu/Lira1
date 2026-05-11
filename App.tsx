@@ -53,19 +53,6 @@ const AnalyticsIcon: React.FC<{ color: string; size: number }> = ({ color, size 
   </Svg>
 );
 
-const HistoryIcon: React.FC<{ color: string; size: number }> = ({ color, size }) => (
-  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-    <Path
-      d="M3 12a9 9 0 1 0 3-6.7"
-      stroke={color}
-      strokeWidth={1.6}
-      strokeLinecap="round"
-    />
-    <Path d="M3 4v4h4" stroke={color} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" />
-    <Path d="M12 8v5l3 2" stroke={color} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" />
-  </Svg>
-);
-
 const SettingsIcon: React.FC<{ color: string; size: number }> = ({ color, size }) => (
   <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
     <Circle cx={12} cy={12} r={3} stroke={color} strokeWidth={1.5} />
@@ -140,19 +127,9 @@ const Tabs: React.FC = () => {
         name="Analytics"
         component={AnalyticsScreen}
         options={{
-          title: t('tabs.analytics'),
+          title: t('tabs.stats'),
           tabBarIcon: ({ color, size }) => (
             <AnalyticsIcon color={color} size={size} />
-          ),
-        }}
-      />
-      <Tab.Screen
-        name="History"
-        component={HistoryScreen}
-        options={{
-          title: t('tabs.history'),
-          tabBarIcon: ({ color, size }) => (
-            <HistoryIcon color={color} size={size} />
           ),
         }}
       />
@@ -276,6 +253,11 @@ const RootNavigator: React.FC = () => {
         <Stack.Screen
           name="DayDetail"
           component={DayDetailScreen}
+          options={{ title: '' }}
+        />
+        <Stack.Screen
+          name="History"
+          component={HistoryScreen}
           options={{ title: '' }}
         />
         <Stack.Screen
