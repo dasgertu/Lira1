@@ -28,6 +28,38 @@ export const findPeriodStarts = (logs: Record<string, DayLog>): string[] => {
   return starts;
 };
 
+/**
+ * Identifies contiguous bleeding episodes as ``{start, end}`` ISO pairs.
+ * ``end`` is the last consecutive bleeding day (inclusive). Used by the
+ * Sync-with-Telegram flow so the bot/admin can see actual cycle history
+ * (e.g. ``3-8 апр``, ``30 апр - 4 мая``) instead of just averages.
+ */
+export const findPeriodEpisodes = (
+  logs: Record<string, DayLog>,
+): { start: string; end: string }[] => {
+  const dates = Object.keys(logs)
+    .filter((d) => isBleeding(logs[d]))
+    .sort();
+  if (dates.length === 0) return [];
+  const episodes: { start: string; end: string }[] = [];
+  let curStart = dates[0];
+  let curEnd = dates[0];
+  for (let i = 1; i < dates.length; i++) {
+    const prev = curEnd;
+    const next = dates[i];
+    const expected = fmt(addDays(parseISO(prev), 1));
+    if (next === expected) {
+      curEnd = next;
+    } else {
+      episodes.push({ start: curStart, end: curEnd });
+      curStart = next;
+      curEnd = next;
+    }
+  }
+  episodes.push({ start: curStart, end: curEnd });
+  return episodes;
+};
+
 export interface CycleStats {
   cycleLengths: number[];
   averageCycleLength: number | null;
@@ -73,7 +105,13 @@ export const computeCycleStats = (
   }
 
   // Compute average period length by counting consecutive bleeding days
-  // starting from each detected period start.
+  // starting from each detected period start. Skip the still-in-progress
+  // episode (the last bleeding day is today): its length is incomplete and
+  // would otherwise drag the rolling average way down — e.g. if the user
+  // just tapped "Yes, period started today", that single day would weigh
+  // 1 against history and the predicted period length collapses to ~2,
+  // hiding most of the forecast for the rest of the current cycle.
+  const today = new Date();
   const periodLengths: number[] = [];
   for (const start of periodStarts) {
     let len = 0;
@@ -83,7 +121,12 @@ export const computeCycleStats = (
       cursor = addDays(cursor, 1);
       if (len > 14) break; // safety
     }
-    if (len > 0) periodLengths.push(len);
+    // After the loop, `cursor` points at the first non-bleeding day. If
+    // that day is in the future relative to today, the episode might still
+    // continue (today is bleeding, tomorrow is unknown) — treat as
+    // in-progress and exclude.
+    const inProgress = differenceInCalendarDays(cursor, today) > 0;
+    if (len > 0 && !inProgress) periodLengths.push(len);
   }
   const avgPeriod =
     periodLengths.length > 0
@@ -223,16 +266,24 @@ export const buildDayMarkers = (
     const periodLen = predictions.effectivePeriodLength;
     const luteal = settings.lutealPhaseLength;
     const horizonDays = 365;
-    let startCursor = parseISO(predictions.nextPeriodStart);
-    while (differenceInCalendarDays(startCursor, today) <= horizonDays) {
-      // Predicted bleeding days
+
+    // Project predicted period + fertile window for one cycle starting at
+    // `cycleStart`. Days the user already logged as bleeding stay as "period"
+    // (logged data wins over the prediction). Predicted bleeding days that
+    // have *already passed* get filled as "period" too — the cycle math says
+    // bleeding was expected on those days and the user hasn't logged
+    // otherwise, so showing them as a forecast ring would mis-state the past.
+    // Today and future predicted days remain as a forecast ring.
+    const projectCycle = (cycleStart: Date) => {
       for (let i = 0; i < periodLen; i++) {
-        const d = fmt(addDays(startCursor, i));
-        if (!isBleeding(logs[d])) add(d, 'predictedPeriod');
+        const day = addDays(cycleStart, i);
+        const d = fmt(day);
+        if (isBleeding(logs[d])) continue;
+        const isPast = differenceInCalendarDays(day, today) < 0;
+        add(d, isPast ? 'period' : 'predictedPeriod');
       }
-      // Ovulation + fertile window for this projected cycle
       if (settings.showFertileWindow) {
-        const ovDate = addDays(startCursor, -luteal);
+        const ovDate = addDays(cycleStart, -luteal);
         const fertileStart = addDays(ovDate, -5);
         const fertileEnd = addDays(ovDate, 1);
         let fc = fertileStart;
@@ -242,6 +293,34 @@ export const buildDayMarkers = (
         }
         add(fmt(ovDate), 'ovulation');
       }
+    };
+
+    // `computePredictions` rolls `nextPeriodStart` forward until it lands in
+    // the future relative to today. That hides any cycle that *should* have
+    // started recently — e.g. a user whose period is a few days late ends up
+    // with no May forecast on the calendar at all, even though May 1–5 was
+    // predicted to be bleeding. Project that "missed" / current cycle too so
+    // the days that were predicted but haven't been logged still show as a
+    // forecast (coral ring), and the cycle's fertile/ovulation window is
+    // plotted. We include the case where `prevStart === lastLogged` — that
+    // happens when the user just logged today as the start of their current
+    // cycle; the rest of the predicted bleeding days for that cycle still
+    // need to be plotted as forecast.
+    const next = parseISO(predictions.nextPeriodStart);
+    const lastLogged = predictions.lastPeriodStart
+      ? parseISO(predictions.lastPeriodStart)
+      : null;
+    const prevStart = addDays(next, -cycleLen);
+    if (
+      lastLogged &&
+      differenceInCalendarDays(prevStart, lastLogged) >= 0
+    ) {
+      projectCycle(prevStart);
+    }
+
+    let startCursor = next;
+    while (differenceInCalendarDays(startCursor, today) <= horizonDays) {
+      projectCycle(startCursor);
       startCursor = addDays(startCursor, cycleLen);
     }
   }
@@ -392,12 +471,15 @@ export const computeCycleHistory = (
       if (periodLength > 14) break;
     }
 
-    const cycleLogs: DayLog[] = [];
+    const cycleLogPairs: Array<{ date: string; log: DayLog }> = [];
     const cycleEndIso = end ?? fmt(new Date());
     for (const [date, log] of Object.entries(logs)) {
-      if (date >= start && date <= cycleEndIso) cycleLogs.push(log);
+      if (date >= start && date <= cycleEndIso) {
+        cycleLogPairs.push({ date, log });
+      }
     }
-    cycleLogs.sort((a, b) => a.date.localeCompare(b.date));
+    cycleLogPairs.sort((a, b) => a.date.localeCompare(b.date));
+    const cycleLogs: DayLog[] = cycleLogPairs.map((p) => p.log);
 
     entries.push({ start, end, cycleLength, periodLength, logs: cycleLogs });
   }

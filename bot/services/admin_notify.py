@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import date, datetime
 from html import escape
 from typing import TYPE_CHECKING, Mapping, Sequence
 
@@ -109,6 +109,66 @@ def _label(value: str | None, labels: Mapping[str, str]) -> str:
     return escape(labels.get(value, value))
 
 
+_RU_MONTHS_GEN = (
+    "янв",
+    "фев",
+    "мар",
+    "апр",
+    "мая",
+    "июн",
+    "июл",
+    "авг",
+    "сен",
+    "окт",
+    "ноя",
+    "дек",
+)
+
+
+def _fmt_episode(start: date, end: date) -> str:
+    """Render a period episode as ``3-8 апр`` / ``30 апр - 4 мая``."""
+    if start == end:
+        return f"{start.day} {_RU_MONTHS_GEN[start.month - 1]}"
+    if start.year == end.year and start.month == end.month:
+        return f"{start.day}-{end.day} {_RU_MONTHS_GEN[start.month - 1]}"
+    if start.year == end.year:
+        return (
+            f"{start.day} {_RU_MONTHS_GEN[start.month - 1]} - "
+            f"{end.day} {_RU_MONTHS_GEN[end.month - 1]}"
+        )
+    return (
+        f"{start.day} {_RU_MONTHS_GEN[start.month - 1]} {start.year} - "
+        f"{end.day} {_RU_MONTHS_GEN[end.month - 1]} {end.year}"
+    )
+
+
+def _format_period_episodes(profile: "Profile") -> str:
+    """Pretty-print the user's period history pushed from the app.
+
+    Returns a multi-line string of bulleted ranges, or empty string when
+    the app hasn't synced anything.
+    """
+    raw = (profile.extra or {}).get("period_episodes")
+    if not isinstance(raw, list) or not raw:
+        return ""
+    parsed: list[tuple[date, date]] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        try:
+            start = date.fromisoformat(item.get("start", ""))
+            end = date.fromisoformat(item.get("end", ""))
+        except (TypeError, ValueError):
+            continue
+        if end < start:
+            start, end = end, start
+        parsed.append((start, end))
+    if not parsed:
+        return ""
+    parsed.sort(key=lambda p: p[0])
+    return "\n".join(f"   – {_fmt_episode(s, e)}" for s, e in parsed)
+
+
 def _user_link(user_tg: "TGUser") -> str:
     name = user_tg.first_name or user_tg.username or str(user_tg.id)
     handle = f"@{user_tg.username}" if user_tg.username else ""
@@ -147,6 +207,9 @@ def format_full_profile(user_tg: "TGUser", profile: "Profile") -> str:
         f"• Цикл: {profile.cycle_length_days or '—'} дн., "
         f"месячные {profile.period_length_days or '—'} дн."
     )
+    episodes_block = _format_period_episodes(profile)
+    if episodes_block:
+        lines.append(f"• История месячных (из приложения):\n{episodes_block}")
     lines.append("")
     lines.append("<b>Шаг 2. Гигиена</b>")
     lines.append(f"• Прокладки: {_list(profile.hygiene_pads, PADS_LABELS)}")

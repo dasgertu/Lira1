@@ -17,6 +17,7 @@ import { HistoryScreen } from './src/screens/HistoryScreen';
 import { CycleDetailScreen } from './src/screens/CycleDetailScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { OnboardingScreen } from './src/screens/OnboardingScreen';
+import { ConsentScreen } from './src/screens/ConsentScreen';
 import { LockScreen } from './src/screens/LockScreen';
 import { SubscriptionScreen } from './src/screens/SubscriptionScreen';
 import { ManageSubscriptionScreen } from './src/screens/ManageSubscriptionScreen';
@@ -49,19 +50,6 @@ const AnalyticsIcon: React.FC<{ color: string; size: number }> = ({ color, size 
     <Path d="M5 19V11" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
     <Path d="M12 19V5" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
     <Path d="M19 19v-6" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
-  </Svg>
-);
-
-const HistoryIcon: React.FC<{ color: string; size: number }> = ({ color, size }) => (
-  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-    <Path
-      d="M3 12a9 9 0 1 0 3-6.7"
-      stroke={color}
-      strokeWidth={1.6}
-      strokeLinecap="round"
-    />
-    <Path d="M3 4v4h4" stroke={color} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" />
-    <Path d="M12 8v5l3 2" stroke={color} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" />
   </Svg>
 );
 
@@ -139,19 +127,9 @@ const Tabs: React.FC = () => {
         name="Analytics"
         component={AnalyticsScreen}
         options={{
-          title: t('tabs.analytics'),
+          title: t('tabs.stats'),
           tabBarIcon: ({ color, size }) => (
             <AnalyticsIcon color={color} size={size} />
-          ),
-        }}
-      />
-      <Tab.Screen
-        name="History"
-        component={HistoryScreen}
-        options={{
-          title: t('tabs.history'),
-          tabBarIcon: ({ color, size }) => (
-            <HistoryIcon color={color} size={size} />
           ),
         }}
       />
@@ -230,6 +208,15 @@ const RootNavigator: React.FC = () => {
     colors: { ...baseTheme.colors, ...navTheme.colors },
   };
 
+  if (!data.consentAcceptedAt) {
+    return (
+      <View style={{ flex: 1, backgroundColor: colors.background }}>
+        <ConsentScreen onAccept={() => undefined} />
+        <StatusBar style={isDark ? 'light' : 'dark'} />
+      </View>
+    );
+  }
+
   if (!data.onboardingDone) {
     return (
       <View style={{ flex: 1, backgroundColor: colors.background }}>
@@ -266,6 +253,11 @@ const RootNavigator: React.FC = () => {
         <Stack.Screen
           name="DayDetail"
           component={DayDetailScreen}
+          options={{ title: '' }}
+        />
+        <Stack.Screen
+          name="History"
+          component={HistoryScreen}
           options={{ title: '' }}
         />
         <Stack.Screen
@@ -335,7 +327,7 @@ const frameStyles = StyleSheet.create({
     maxHeight: 880,
     borderRadius: 44,
     overflow: 'hidden',
-    backgroundColor: '#FBF6EF',
+    backgroundColor: '#FCEAD3',
     shadowColor: '#8E6F58',
     shadowOpacity: 0.18,
     shadowRadius: 40,

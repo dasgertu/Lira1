@@ -10,7 +10,7 @@
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#FFFCF7"
+      "backgroundColor": "#FCEAD3"
     },
     "ios": {
       "supportsTablet": true,
@@ -24,7 +24,7 @@
       "package": "com.cycletracker.app",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#FFFCF7"
+        "backgroundColor": "#FCEAD3"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false

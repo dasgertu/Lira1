@@ -16,7 +16,11 @@ from aiogram.types import (
 from bot.config import get_settings
 from bot.db import session_scope
 from bot.models import Tariff
-from bot.services.payments import TARIFF_META, finalize_payment, send_invoice
+from bot.services.payments import (
+    TARIFF_META,
+    finalize_payment_no_code,
+    send_invoice,
+)
 from bot.services.users import get_or_create_user
 from bot.states import Onboarding
 
@@ -66,35 +70,44 @@ async def show_tariffs(message: Message) -> None:
 
 @router.callback_query(Onboarding.tariff, F.data.startswith("tariff:"))
 async def pick_tariff(cb: CallbackQuery, state: FSMContext) -> None:
+    """Legacy fallback: tariff picker shown after the survey if we lost the
+    preselected value. Welcome menu now handles tariff selection up front."""
     raw = (cb.data or "").split(":", 1)[1]
     try:
         tariff = Tariff(raw)
     except ValueError:
         await cb.answer("Неизвестный тариф", show_alert=True)
         return
-    settings = get_settings()
-    await state.update_data(_tariff=tariff.value)
     await state.set_state(Onboarding.waiting_payment)
     await cb.message.edit_reply_markup(reply_markup=None)
+    await invoice_for_tariff(cb.message, state, tariff)
+    await cb.answer()
 
-    sent = await send_invoice(cb.message.bot, cb.message.chat.id, tariff)
+
+async def invoice_for_tariff(
+    message: Message, state: FSMContext, tariff: Tariff
+) -> None:
+    """Send a Telegram Payments invoice for the given tariff. Falls back to
+    a manual ``Я оплатила (тест)`` button when no payment provider is
+    configured. Used both from the Premium fast path and the
+    onboarding-completed path."""
+    await state.update_data(_tariff=tariff.value)
+    sent = await send_invoice(message.bot, message.chat.id, tariff)
     if not sent:
-        # No provider token — fall back to manual confirmation
-        await cb.message.answer(
-            f"Платёжный провайдер не настроен. Напиши администратору и пришли подтверждение оплаты, "
-            f"либо нажми «Я оплатила» для тестового подтверждения.",
+        await message.answer(
+            "Платёжный провайдер пока не настроен. Можешь оформить "
+            "подписку в тестовом режиме — нажми кнопку ниже.",
             reply_markup=InlineKeyboardMarkup(
                 inline_keyboard=[
                     [
                         InlineKeyboardButton(
-                            text="✅ Я оплатила (тест)",
+                            text=f"✅ Оформить за {TARIFF_META[tariff]['price']} ₽ (тест)",
                             callback_data=f"manualpay:{tariff.value}",
                         )
                     ]
                 ]
             ),
         )
-    await cb.answer()
 
 
 @router.callback_query(Onboarding.waiting_payment, F.data.startswith("manualpay:"))
@@ -154,33 +167,36 @@ async def _complete_payment(
     user_tg = event.from_user
     async with session_scope() as session:
         user = await get_or_create_user(session, user_tg)
-        order, code_value = await finalize_payment(
+        order, sub = await finalize_payment_no_code(
             session,
             user=user,
             tariff=tariff,
             payment_id=payment_id,
             amount_rub=amount_rub,
         )
+        device_id = user.device_id
 
     if tariff == Tariff.PREMIUM:
         tail = (
-            "Открой приложение <b>Lira</b> → вкладка «Подписка» → введи этот код. "
-            "Сразу разблокируются: расширенная аналитика, история циклов, "
-            "детальный прогноз овуляции, экспорт PDF/CSV и гайды.\n\n"
-            "Команда /mybox — посмотреть статус подписки."
+            "Открой приложение <b>Lira</b> — расширенная аналитика, история "
+            "циклов, прогноз овуляции, экспорт PDF/CSV и гайды уже разблокированы.\n\n"
+            "Если приложение ещё не привязано к Telegram — открой его, зайди "
+            "во вкладку «Подписка» и нажми «Синхронизация с Telegram».\n\n"
+            "Команда /mybox — статус подписки."
         )
     else:
         tail = (
-            "Открой приложение <b>Lira</b> → вкладка «Подписка» → введи этот код.\n\n"
-            "Я начну собирать твой первый бокс к ближайшим месячным. "
-            "Команда /mybox — посмотреть статус."
+            "Я начну собирать твой первый бокс к ближайшим месячным.\n\n"
+            "В приложении <b>Lira</b> подписка автоматически активна — "
+            "если ещё не привязал(а) приложение к Telegram, открой "
+            "вкладку «Подписка» и нажми «Синхронизация с Telegram».\n\n"
+            "Команда /mybox — статус."
         )
+    expires_at = sub.expires_at.date().isoformat()
     text = (
-        "✨ Готово! Подписка оформлена.\n\n"
+        "✨ <b>Готово! Подписка активирована.</b>\n\n"
         f"<b>Тариф:</b> {TARIFF_META[tariff]['title']}\n"
-        f"<b>Срок:</b> 30 дней\n\n"
-        f"🔑 <b>Код активации для приложения Lira:</b>\n"
-        f"<code>{code_value}</code>\n\n" + tail
+        f"<b>Действует до:</b> {expires_at}\n\n" + tail
     )
     await _send(event, text)
 
@@ -192,7 +208,7 @@ async def _complete_payment(
                 f"💰 Новая оплата от <a href='tg://user?id={user_tg.id}'>"
                 f"{user_tg.first_name or user_tg.username or user_tg.id}</a>\n"
                 f"Тариф: {tariff.value} • {amount_rub}₽\n"
-                f"Код: <code>{code_value}</code>",
+                f"device_id: <code>{device_id or '—'}</code>",
                 parse_mode="HTML",
             )
         except Exception:  # noqa: BLE001

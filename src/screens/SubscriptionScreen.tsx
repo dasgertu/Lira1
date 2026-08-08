@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Linking,
@@ -6,10 +6,8 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
-import * as Clipboard from 'expo-clipboard';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -17,25 +15,92 @@ import { format, parseISO } from 'date-fns';
 import { ru } from 'date-fns/locale';
 
 import { useApp } from '../AppContext';
-import { findPeriodStarts } from '../cycle';
-import { encodeCycleCode } from '../cycleCode';
+import { findPeriodEpisodes, findPeriodStarts } from '../cycle';
 import { useSubscription } from '../hooks/useSubscription';
 import { RootStackParamList } from '../navigation';
 import { SERIF_STACK, WaveBackground } from '../components/WaveBackground';
 import { ThemeColors } from '../theme';
+import {
+  buildTelegramLinkUrl,
+  pushCyclePayloadToBot,
+} from '../utils/subscription';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
-const TELEGRAM_BOT_URL = 'https://t.me/lowerBsk24_bot?start=subscription';
+const BOT_USERNAME = 'lowerBsk24_bot';
 const BUTTON_ACCENT = '#8267E6';
+
+interface TierPalette {
+  /** Solid background tint of the card. */
+  bg: string;
+  /** Top-right large blurred-look glow blob. */
+  glowA: string;
+  /** Bottom-left large blurred-look glow blob. */
+  glowB: string;
+  /** Soft thin highlight stroke layered on top. */
+  highlight: string;
+  /** Drop-shadow color (subtle, behind the card). */
+  shadow: string;
+  /** Border color when card is "selected" (subscription active). */
+  borderActive: string;
+  /** Default border color. */
+  border: string;
+  /** Title + price text color. */
+  textPrimary: string;
+  /** Body text color. */
+  textBody: string;
+  /** Color of the small badge pill at the top of the card. */
+  badgeBg: string;
+  badgeText: string;
+  /** CTA button background + text colors. */
+  buttonBg: string;
+  buttonText: string;
+}
+
+// Warm sunrise palette — soft peach cream with rose glow. Conveys
+// "everyday morning ritual".
+const PALETTE_DAWN: TierPalette = {
+  bg: '#FBE0CF',
+  glowA: '#F4B5D2',
+  glowB: '#FCD0C0',
+  highlight: 'rgba(255,255,255,0.55)',
+  shadow: '#E7B9A6',
+  borderActive: '#C45A8E',
+  border: 'rgba(255,255,255,0.55)',
+  textPrimary: '#7E4F58',
+  textBody: '#8F6E6A',
+  badgeBg: '#FFF3EA',
+  badgeText: '#C45A8E',
+  buttonBg: '#C45A8E',
+  buttonText: '#FFFFFF',
+};
+
+// Deep sunset palette — rich warm rose with magenta glow. Conveys
+// "luxury evening, more than just basics".
+const PALETTE_SUNSET: TierPalette = {
+  bg: '#C45A8E',
+  glowA: '#E07083',
+  glowB: '#F4B5D2',
+  highlight: 'rgba(255,235,225,0.18)',
+  shadow: '#7A2D55',
+  borderActive: '#FCEAD3',
+  border: 'rgba(255,234,211,0.35)',
+  textPrimary: '#FFF4E8',
+  textBody: '#FCE5D7',
+  badgeBg: '#FFF3EA',
+  badgeText: '#7A2D55',
+  buttonBg: '#FFF4E8',
+  buttonText: '#7A2D55',
+};
 
 interface MysteryTierCardProps {
   title: string;
   price: string;
   body: string;
   buttonLabel: string;
-  tint: string;
-  glow: string;
+  badgeLabel?: string;
+  features?: string[];
+  palette: TierPalette;
   active?: boolean;
   onPress: () => void;
 }
@@ -45,8 +110,9 @@ const MysteryTierCard: React.FC<MysteryTierCardProps> = ({
   price,
   body,
   buttonLabel,
-  tint,
-  glow,
+  badgeLabel,
+  features,
+  palette,
   active,
   onPress,
 }) => {
@@ -55,20 +121,92 @@ const MysteryTierCard: React.FC<MysteryTierCardProps> = ({
       style={[
         stylesShared.card,
         {
-          backgroundColor: tint,
-          shadowColor: glow,
-          borderColor: active ? BUTTON_ACCENT : 'rgba(255,255,255,0.35)',
+          backgroundColor: palette.bg,
+          shadowColor: palette.shadow,
+          borderColor: active ? palette.borderActive : palette.border,
           borderWidth: active ? 1.5 : 1,
+          overflow: 'hidden',
         },
       ]}
     >
+      <View
+        style={[
+          stylesShared.premiumGlowA,
+          { backgroundColor: palette.glowA, opacity: 0.75 },
+        ]}
+      />
+      <View
+        style={[
+          stylesShared.premiumGlowB,
+          { backgroundColor: palette.glowB, opacity: 0.55 },
+        ]}
+      />
+      <View
+        style={[
+          stylesShared.tierHighlight,
+          { backgroundColor: palette.highlight },
+        ]}
+      />
+      {badgeLabel ? (
+        <View style={stylesShared.premiumBadgeRow}>
+          <View
+            style={[
+              stylesShared.premiumBadge,
+              { backgroundColor: palette.badgeBg },
+            ]}
+          >
+            <Text
+              style={[
+                stylesShared.premiumBadgeText,
+                { color: palette.badgeText },
+              ]}
+            >
+              {badgeLabel}
+            </Text>
+          </View>
+        </View>
+      ) : null}
       <View style={stylesShared.cardTopRow}>
-        <Text style={stylesShared.cardTitle}>{title}</Text>
-        <Text style={stylesShared.cardPrice}>{price}</Text>
+        <Text style={[stylesShared.cardTitle, { color: palette.textPrimary }]}>
+          {title}
+        </Text>
+        <Text style={[stylesShared.cardPrice, { color: palette.textPrimary }]}>
+          {price}
+        </Text>
       </View>
-      <Text style={stylesShared.cardBody}>{body}</Text>
-      <Pressable style={stylesShared.cardButton} onPress={onPress}>
-        <Text style={stylesShared.cardButtonText}>{buttonLabel}</Text>
+      <Text style={[stylesShared.cardBody, { color: palette.textBody }]}>
+        {body}
+      </Text>
+      {features && features.length > 0 ? (
+        <View style={stylesShared.featureList}>
+          {features.map((line) => (
+            <Text
+              key={line}
+              style={[
+                stylesShared.featureLine,
+                { color: palette.textBody },
+              ]}
+            >
+              ✦ {line}
+            </Text>
+          ))}
+        </View>
+      ) : null}
+      <Pressable
+        style={[
+          stylesShared.cardButton,
+          { backgroundColor: palette.buttonBg },
+        ]}
+        onPress={onPress}
+      >
+        <Text
+          style={[
+            stylesShared.cardButtonText,
+            { color: palette.buttonText },
+          ]}
+        >
+          {buttonLabel}
+        </Text>
       </Pressable>
     </View>
   );
@@ -170,56 +308,24 @@ export const SubscriptionScreen: React.FC = () => {
     isActive,
     isPremium,
     daysLeft,
-    activate,
+    refresh,
   } = useSubscription();
   const navigation = useNavigation<Nav>();
   const styles = useMemo(() => makeStyles(colors), [colors]);
-  const [code, setCode] = useState('');
-  const [submitting, setSubmitting] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [linkUrl, setLinkUrl] = useState<string | null>(null);
 
-  const syncInfo = useMemo(() => {
-    const starts = findPeriodStarts(data.logs);
-    const startDate = starts.length > 0 ? starts[starts.length - 1] : null;
-    if (!startDate) return null;
-    try {
-      const code = encodeCycleCode({
-        startDate,
-        cycleLength: data.settings.averageCycleLength,
-        periodLength: data.settings.averagePeriodLength,
-      });
-      const periodLength = Math.max(1, data.settings.averagePeriodLength);
-      const endIso = (() => {
-        const d = new Date(`${startDate}T00:00:00Z`);
-        d.setUTCDate(d.getUTCDate() + periodLength - 1);
-        return d.toISOString().slice(0, 10);
-      })();
-      const fmtDate = (iso: string) => {
-        const [y, m, day] = iso.split('-');
-        return `${day}.${m}.${y}`;
-      };
-      return {
-        code,
-        startLabel: fmtDate(startDate),
-        endLabel: fmtDate(endIso),
-      };
-    } catch {
-      return null;
-    }
-  }, [data.logs, data.settings.averageCycleLength, data.settings.averagePeriodLength]);
-  const syncCode = syncInfo?.code ?? null;
-
-  const copySyncCode = async () => {
-    if (!syncCode) return;
-    try {
-      await Clipboard.setStringAsync(syncCode);
-      Alert.alert(
-        'Скопировано',
-        `Открой Lira BOX и пришли ему сообщение:\n/sync ${syncCode}`,
-      );
-    } catch {
-      Alert.alert('Не удалось скопировать', syncCode);
-    }
-  };
+  // Resolve the Telegram deep-link once so the "Sync with Telegram" CTA
+  // can open it without async work on press.
+  useEffect(() => {
+    let cancelled = false;
+    void buildTelegramLinkUrl().then((url) => {
+      if (!cancelled) setLinkUrl(url);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const fmtDate = (iso: string | null): string => {
     if (!iso) return '—';
@@ -230,10 +336,43 @@ export const SubscriptionScreen: React.FC = () => {
     }
   };
 
-  const openBot = () => {
-    Linking.openURL(TELEGRAM_BOT_URL).catch(() => {
-      Alert.alert('Не получилось открыть Telegram', TELEGRAM_BOT_URL);
-    });
+  // Per-tariff CTAs open the bot via a tariff-specific deep link
+  // (`t.me/<bot>?start=<slug>`). On web the lira-pay overlay in
+  // index.html intercepts these calls and runs the entire checkout +
+  // questionnaire in-app instead of bouncing through Telegram. On
+  // native, the link opens the bot which has its own handler for the
+  // slug.
+  const openBotForTariff = (slug: 'premium' | 'basic' | 'vip') => {
+    void (async () => {
+      try {
+        // Push the latest cycle data so the bot can skip the cycle
+        // questions if it ends up being used.
+        const starts = findPeriodStarts(data.logs);
+        const anchor = starts.length > 0 ? starts[starts.length - 1] : null;
+        const episodes = findPeriodEpisodes(data.logs);
+        await pushCyclePayloadToBot({
+          anchorDate: anchor,
+          cycleLength: data.settings.averageCycleLength,
+          periodLength: data.settings.averagePeriodLength,
+          episodes,
+        }).catch(() => undefined);
+        const url = `https://t.me/${BOT_USERNAME}?start=${slug}`;
+        const can = await Linking.canOpenURL(url);
+        if (!can) {
+          Alert.alert(
+            'Не получилось открыть Telegram',
+            'Открой бота вручную: @' + BOT_USERNAME,
+          );
+          return;
+        }
+        await Linking.openURL(url);
+        setTimeout(() => {
+          void refresh();
+        }, 4000);
+      } catch {
+        Alert.alert('Не получилось открыть Telegram', BOT_USERNAME);
+      }
+    })();
   };
 
   const onPressPremium = () => {
@@ -241,40 +380,46 @@ export const SubscriptionScreen: React.FC = () => {
       navigation.navigate('ManageSubscription');
       return;
     }
-    const url = 'https://t.me/lowerBsk24_bot?start=premium';
-    Linking.openURL(url).catch(() => {
-      Alert.alert('Не получилось открыть Telegram', url);
-    });
+    openBotForTariff('premium');
   };
 
-  const onActivate = async () => {
-    setSubmitting(true);
+  // Open the bot via the link_<deviceid> deep link. Once the user taps
+  // "Open" inside Telegram and the bot responds, the device is bound to
+  // their Telegram account; the auto-poll inside useSubscription picks
+  // up the active subscription within ~30s after they pay.
+  const openSyncWithTelegram = async () => {
+    setSyncing(true);
     try {
-      const res = await activate(code);
-      if (res.ok) {
-        setCode('');
-        const tariffName =
-          res.tier === 'vip'
-            ? 'Полная симфония'
-            : res.tier === 'basic'
-              ? 'Твой ритм'
-              : 'Lira Premium';
+      // Push whatever cycle data the user has logged so far so the bot
+      // can skip the cycle questions in the box questionnaire.
+      const starts = findPeriodStarts(data.logs);
+      const anchor = starts.length > 0 ? starts[starts.length - 1] : null;
+      const episodes = findPeriodEpisodes(data.logs);
+      await pushCyclePayloadToBot({
+        anchorDate: anchor,
+        cycleLength: data.settings.averageCycleLength,
+        periodLength: data.settings.averagePeriodLength,
+        episodes,
+      });
+      const url = linkUrl ?? (await buildTelegramLinkUrl());
+      const can = await Linking.canOpenURL(url);
+      if (!can) {
         Alert.alert(
-          'Подписка активирована',
-          `Тариф: ${tariffName}. Действует до ${fmtDate(`${res.expires}T00:00:00.000Z`)}.`,
+          'Не получилось открыть Telegram',
+          'Открой бота вручную: @' + BOT_USERNAME,
         );
         return;
       }
-      if (res.reason === 'empty') {
-        Alert.alert('Введи код', 'Скопируй код из сообщения бота и вставь сюда.');
-        return;
-      }
-      Alert.alert(
-        'Код не найден',
-        'Проверь, что ввела код полностью и без пробелов. Если код правильный — напиши боту.',
-      );
+      await Linking.openURL(url);
+      // After the user comes back we proactively refresh status. The
+      // 30s poll will keep checking too.
+      setTimeout(() => {
+        void refresh();
+      }, 4000);
+    } catch {
+      Alert.alert('Не получилось открыть Telegram', BOT_USERNAME);
     } finally {
-      setSubmitting(false);
+      setSyncing(false);
     }
   };
 
@@ -318,93 +463,68 @@ export const SubscriptionScreen: React.FC = () => {
         <MysteryTierCard
           title="Твой ритм"
           price="999₽/мес"
-          tint={colors.card}
-          glow="#D8BDEB"
+          badgeLabel="Базовый бокс"
+          palette={PALETTE_DAWN}
           active={isActive && tier === 'basic'}
-          body="Каждый месяц перед началом цикла курьер приносит загадочную коробку. Внутри – твои выбранные средства гигиены, вкусный комплимент и ритуал ухода. Состав меняется, опираясь на твой профиль, аллергии, сезон и фазу. Мы не повторяемся. Ты узнаешь наполнение, только открыв коробку."
+          body="Каждый месяц перед началом цикла курьер приносит загадочную коробку. Внутри — твои выбранные средства гигиены, вкусный комплимент и ритуал ухода."
+          features={[
+            'Подбор по твоему профилю и аллергиям',
+            'Состав меняется каждый месяц',
+            'Доставка к началу цикла',
+          ]}
           buttonLabel="Выбрать ритм"
-          onPress={openBot}
+          onPress={() => openBotForTariff('basic')}
         />
 
         <MysteryTierCard
           title="Полная симфония"
           price="1999₽/мес"
-          tint={colors.surface}
-          glow="#C9B5FF"
+          badgeLabel="Премиум-бокс"
+          palette={PALETTE_SUNSET}
           active={isActive && tier === 'vip'}
-          body="Расширенная тайна для тех, кто хочет больше заботы и сюрпризов. Органические средства гигиены, гастрономический подарок ручной работы, ритуалы ухода для лица, тела и души, чайная церемония и тайный презент. Плюс персональные гайды и медитации в приложении. Бесплатная доставка к началу цикла. Мы собираем этот бокс в абсолютной тишине, зная о тебе больше, чем ты думаешь. Открой – и почувствуй мелодию заботы, написанную только для тебя."
+          body="Расширенная тайна для тех, кто хочет больше заботы. Органическая гигиена, гастрономический подарок ручной работы, ритуалы ухода и персональные гайды в приложении."
+          features={[
+            'Органические средства гигиены',
+            'Чайная церемония и тайный презент',
+            'Гайды и медитации в приложении',
+            'Бесплатная доставка к началу цикла',
+          ]}
           buttonLabel="Выбрать симфонию"
-          onPress={openBot}
+          onPress={() => openBotForTariff('vip')}
         />
 
         <View style={styles.codeCard}>
-          <Text style={styles.codeTitle}>Код синхронизации цикла</Text>
+          <Text style={styles.codeTitle}>Синхронизация с Telegram</Text>
           <Text style={styles.codeHint}>
-            Внутри кода — <Text style={{ fontWeight: '700' }}>дата начала</Text> и{' '}
-            <Text style={{ fontWeight: '700' }}>дата конца</Text> твоих последних
-            месячных и средняя длина цикла. Это{' '}
-            <Text style={{ fontWeight: '700' }}>не</Text> код активации подписки —
-            нужен, чтобы Lira BOX знал, когда отправить тебе коробку.
+            Открой Lira BOX в Telegram — выбери тариф и оплати. Подписка{' '}
+            <Text style={{ fontWeight: '700' }}>автоматически активируется</Text>.
           </Text>
-          {syncCode && syncInfo ? (
-            <>
-              <View style={styles.syncBadge}>
-                <Text style={styles.syncBadgeText}>{syncCode}</Text>
-              </View>
-              <Text style={[styles.codeHint, { textAlign: 'center', marginTop: 8 }]}>
-                Месячные: {syncInfo.startLabel} → {syncInfo.endLabel}
-              </Text>
-              <Pressable style={styles.activateButton} onPress={copySyncCode}>
-                <Text style={styles.activateButtonText}>
-                  Скопировать код
-                </Text>
-              </Pressable>
-              <Pressable
-                style={[
-                  styles.activateButton,
-                  { marginTop: 10, backgroundColor: 'transparent', borderWidth: 1, borderColor: BUTTON_ACCENT },
-                ]}
-                onPress={() => {
-                  const url = `https://t.me/lowerBsk24_bot?start=sync_${encodeURIComponent(syncCode)}`;
-                  Linking.openURL(url).catch(() => {
-                    Alert.alert('Не получилось открыть Telegram', url);
-                  });
-                }}
-              >
-                <Text style={[styles.activateButtonText, { color: BUTTON_ACCENT }]}>
-                  Открыть Lira BOX
-                </Text>
-              </Pressable>
-            </>
-          ) : (
-            <Text style={styles.codeHint}>
-              Сначала отметь день начала последних месячных в календаре или на
-              экране «Сегодня». Тогда здесь появится твой код.
-            </Text>
-          )}
-        </View>
-
-        <View style={styles.codeCard}>
-          <Text style={styles.codeTitle}>Код активации</Text>
-          <Text style={styles.codeHint}>
-            Бот пришлёт его после оплаты. Введи код, чтобы активировать подписку в приложении.
-          </Text>
-          <TextInput
-            style={styles.codeInput}
-            placeholder="Например, A7K9TXM2"
-            placeholderTextColor={colors.textMuted}
-            autoCapitalize="characters"
-            autoCorrect={false}
-            value={code}
-            onChangeText={(value) => setCode(value.toUpperCase())}
-            editable={!submitting}
-          />
           <Pressable
-            style={[styles.activateButton, submitting && { opacity: 0.6 }]}
-            onPress={onActivate}
-            disabled={submitting}
+            style={[styles.activateButton, syncing && { opacity: 0.6 }]}
+            onPress={() => void openSyncWithTelegram()}
+            disabled={syncing}
           >
-            <Text style={styles.activateButtonText}>Активировать</Text>
+            <Text style={styles.activateButtonText}>
+              {syncing ? 'Открываю Telegram…' : 'Открыть Lira BOX в Telegram'}
+            </Text>
+          </Pressable>
+          <Pressable
+            style={[
+              styles.activateButton,
+              {
+                marginTop: 10,
+                backgroundColor: 'transparent',
+                borderWidth: 1,
+                borderColor: BUTTON_ACCENT,
+              },
+            ]}
+            onPress={() => void refresh()}
+          >
+            <Text
+              style={[styles.activateButtonText, { color: BUTTON_ACCENT }]}
+            >
+              Обновить статус подписки
+            </Text>
           </Pressable>
         </View>
       </ScrollView>
@@ -473,6 +593,17 @@ const stylesShared = StyleSheet.create({
     borderRadius: 90,
     bottom: -60,
     left: -40,
+  },
+  // Soft top highlight that gives the card a subtle "glassy" sheen on
+  // top of the colored glow blobs.
+  tierHighlight: {
+    position: 'absolute',
+    left: 12,
+    right: 12,
+    top: 10,
+    height: 2,
+    borderRadius: 2,
+    opacity: 0.8,
   },
   premiumBadgeRow: {
     flexDirection: 'row',

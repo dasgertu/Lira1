@@ -43,6 +43,7 @@ yarn-error.*
 # Python venvs
 .venv/
 .venv-bot/
+.botvenv/
 __pycache__/
 *.pyc
 

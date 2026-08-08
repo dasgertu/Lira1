@@ -44,6 +44,9 @@ class Settings(BaseSettings):
     # FastAPI
     api_host: str = Field(default="0.0.0.0", alias="API_HOST")
     api_port: int = Field(default=8000, alias="API_PORT")
+    # Username (without @) used by the API to build deep-link URLs the
+    # app opens for the "Synchronize with Telegram" button.
+    bot_username: OptionalStr = Field(default=None, alias="BOT_USERNAME")
 
     # Subscription
     basic_price_rub: int = Field(default=999, alias="BASIC_PRICE_RUB")

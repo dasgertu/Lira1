@@ -28,8 +28,8 @@ const manifest = {
   display: 'standalone',
   start_url: '/',
   scope: '/',
-  background_color: '#FFFCF7',
-  theme_color: '#FFFCF7',
+  background_color: '#FCEAD3',
+  theme_color: '#FCEAD3',
   icons: [
     {
       src: '/icon-192.png',
@@ -57,7 +57,7 @@ const headInsert = `
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="Lira" />
     <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="theme-color" content="#FFFCF7" />
+    <meta name="theme-color" content="#FCEAD3" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
@@ -100,10 +100,105 @@ const headInsert = `
           navigator.serviceWorker.register('/sw.js').catch(function(){});
         });
       }
+    </script>
+    <style id="lira-splash-style">
+      #lira-splash {
+        position: fixed;
+        inset: 0;
+        z-index: 999999;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        background: #FCEAD3;
+        color: #4A2E1F;
+        font-family: Cochin, "Hoefler Text", "Times New Roman", Georgia, serif;
+        transition: opacity 0.35s ease;
+      }
+      #lira-splash.fade { opacity: 0; pointer-events: none; }
+      #lira-splash .lira-name {
+        font-size: 56px;
+        letter-spacing: 0.08em;
+        line-height: 1;
+        margin-bottom: 14px;
+      }
+      #lira-splash .lira-sub {
+        font-size: 13px;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        color: #8E6F58;
+        margin-bottom: 28px;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      }
+      #lira-splash .lira-dots {
+        display: flex;
+        gap: 8px;
+      }
+      #lira-splash .lira-dots span {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #C99275;
+        opacity: 0.4;
+        animation: lira-dot 1.1s infinite ease-in-out;
+      }
+      #lira-splash .lira-dots span:nth-child(2) { animation-delay: 0.18s; }
+      #lira-splash .lira-dots span:nth-child(3) { animation-delay: 0.36s; }
+      @keyframes lira-dot {
+        0%, 80%, 100% { opacity: 0.3; transform: scale(0.85); }
+        40% { opacity: 1; transform: scale(1); }
+      }
+      #lira-splash .lira-hint {
+        position: absolute;
+        bottom: 32px;
+        font-size: 12px;
+        color: #B89880;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      }
+    </style>
+    <script>
+      // Hide the inline splash as soon as React renders into #root.
+      (function(){
+        function hide(){
+          var s = document.getElementById('lira-splash');
+          if (!s) return;
+          s.classList.add('fade');
+          setTimeout(function(){ if (s.parentNode) s.parentNode.removeChild(s); }, 400);
+        }
+        function watch(){
+          var root = document.getElementById('root');
+          if (!root) return;
+          if (root.children.length > 0) { hide(); return; }
+          var mo = new MutationObserver(function(){
+            if (root.children.length > 0) { hide(); mo.disconnect(); }
+          });
+          mo.observe(root, { childList: true });
+        }
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', watch);
+        } else {
+          watch();
+        }
+      })();
     </script>`;
 
 if (!html.includes('apple-mobile-web-app-title')) {
   html = html.replace('<title>Lira</title>', `<title>Lira</title>${headInsert}`);
+}
+
+const splashMarkup = `    <div id="lira-splash">
+      <div class="lira-name">Lira</div>
+      <div class="lira-sub">cycle &amp; care</div>
+      <div class="lira-dots"><span></span><span></span><span></span></div>
+      <div class="lira-hint">Загружаем…</div>
+    </div>`;
+
+if (!html.includes('id="lira-splash"')) {
+  // Place splash right after <body>, before #root, so it paints with the HTML.
+  html = html.replace(
+    /<div id="root">/,
+    `${splashMarkup}\n    <div id="root">`,
+  );
 }
 
 fs.writeFileSync(indexPath, html);

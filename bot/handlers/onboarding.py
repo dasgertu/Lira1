@@ -125,6 +125,14 @@ def _q(text: str) -> str:
 
 @router.callback_query(F.data == "onboarding:start")
 async def begin(cb: CallbackQuery, state: FSMContext) -> None:
+    from bot.handlers.start import ensure_consent
+
+    if cb.from_user is None or cb.message is None:
+        await cb.answer()
+        return
+    if not await ensure_consent(cb.message, state, cb.from_user, pending="welcome"):
+        await cb.answer()
+        return
     await _ensure_profile(cb)
     await state.set_state(Onboarding.name)
     await cb.message.answer(_q("Шаг 1/7. Как тебя зовут?"), parse_mode="HTML")
@@ -133,6 +141,12 @@ async def begin(cb: CallbackQuery, state: FSMContext) -> None:
 
 @router.message(Command("setup"))
 async def begin_via_command(message: Message, state: FSMContext) -> None:
+    from bot.handlers.start import ensure_consent
+
+    if message.from_user is None:
+        return
+    if not await ensure_consent(message, state, message.from_user, pending="welcome"):
+        return
     await _ensure_profile(message)
     await state.set_state(Onboarding.name)
     await message.answer(_q("Шаг 1/7. Как тебя зовут?"), parse_mode="HTML")
@@ -172,12 +186,35 @@ async def step_city(message: Message, state: FSMContext) -> None:
         await message.answer("Город текстом, пожалуйста.")
         return
     await _save_field(message, city=city)
-    await state.set_state(Onboarding.flow_code_choice)
-    await message.answer(
-        _q("У тебя уже есть код синхронизации цикла из приложения Lira?"),
-        parse_mode="HTML",
-        reply_markup=yes_no(skip=True),
-    )
+    # Cycle data is no longer asked in the bot — the Lira app pushes it
+    # automatically via the "Sync with Telegram" deep link (anchor date,
+    # average cycle length, period length, and the full list of period
+    # episodes). If the user opened the bot directly without the app,
+    # we still skip these questions: the operator will see "—" in the
+    # admin notification and the box ships on the default 28-day cycle
+    # until the user starts logging in the app.
+    async with session_scope() as session:
+        user = await get_or_create_user(session, message.from_user)
+        profile = await get_or_create_profile(session, user)
+        has_cycle = (
+            profile.cycle_length_days is not None
+            and profile.period_length_days is not None
+        )
+        anchor = profile.last_period_start
+        cycle = profile.cycle_length_days
+        period = profile.period_length_days
+    if has_cycle:
+        bullets = []
+        if anchor is not None:
+            bullets.append(f"• Последние месячные: <b>{anchor:%d.%m.%Y}</b>")
+        bullets.append(f"• Длина цикла: <b>{cycle} дн.</b>")
+        bullets.append(f"• Длина месячных: <b>{period} дн.</b>")
+        await message.answer(
+            "Цикл синхронизирован из приложения Lira 💫\n"
+            + "\n".join(bullets),
+            parse_mode="HTML",
+        )
+    await _start_step2(message, state)
 
 
 @router.callback_query(Onboarding.flow_code_choice, F.data.in_({"yes", "no", "nav:skip"}))
@@ -665,9 +702,21 @@ async def _save_address(message: Message, state: FSMContext, field: str) -> None
             await notify_admin_full_profile(
                 message.bot, message.from_user, profile
             )
-        # Step 7
-        await state.set_state(Onboarding.tariff)
-        await _show_tariffs(message)
+        # Survey done. With the new welcome flow the tariff is already
+        # preselected at /start (Твой ритм / Полная симфония) — go straight
+        # to the invoice. Fall back to the picker only if we somehow lost
+        # the preselected value.
+        data = await state.get_data()
+        preselected = data.get("_tariff")
+        if preselected in ("basic", "vip"):
+            from bot.handlers.payment import invoice_for_tariff  # avoid cycle
+            from bot.models import Tariff
+
+            await state.set_state(Onboarding.waiting_payment)
+            await invoice_for_tariff(message, state, Tariff(preselected))
+        else:
+            await state.set_state(Onboarding.tariff)
+            await _show_tariffs(message)
 
 
 # ---- Step 7: tariff selection — defers to payment.py ------------------- #

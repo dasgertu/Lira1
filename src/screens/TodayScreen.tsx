@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Circle as SvgCircle, Rect } from 'react-native-svg';
-import { addDays, format, parseISO } from 'date-fns';
+import { addDays, differenceInCalendarDays, format, parseISO } from 'date-fns';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useApp } from '../AppContext';
@@ -25,8 +25,7 @@ import {
 import { ThemeColors } from '../theme';
 import { PhaseRing } from '../components/PhaseRing';
 import { WaveBackground } from '../components/WaveBackground';
-import { PeriodStartedButton } from '../components/PeriodStartedButton';
-import { useCycleCorrection } from '../hooks/useCycleCorrection';
+import { PeriodStartedPromptModal } from '../components/PeriodStartedPromptModal';
 
 const ruDayWord = (n: number): string => {
   const a = Math.abs(n) % 100;
@@ -150,13 +149,13 @@ const CalendarIcon: React.FC<{ size: number; colors: ThemeColors }> = ({
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
 export const TodayScreen: React.FC = () => {
-  const { data, predictions, colors, t, language, upsertLogs } = useApp();
+  const { data, predictions, colors, t, language, upsertLogs, setPeriodPromptSnoozed } =
+    useApp();
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const navigation = useNavigation<Nav>();
   const { isVip } = useSubscription();
-  const correction = useCycleCorrection();
   const vipShipDate = useMemo(() => {
     if (!isVip || !predictions.nextPeriodStart) return null;
     try {
@@ -175,22 +174,50 @@ export const TodayScreen: React.FC = () => {
     return !!(log && log.flow && log.flow !== 'none');
   })();
 
-  // Show the "did your period start today?" prompt only when today is near
-  // the predicted next-period start (±2 days) and the user hasn't already
-  // logged a flow for today.
-  const showConfirmCard = (() => {
-    if (todayAlreadyLogged) return false;
-    if (confirmDismissed) return false;
-    const days = predictions.daysUntilNextPeriod;
-    if (days === null) return false;
-    return days <= 2 && days >= -7;
+  // Decide whether the auto-popup "did your period start today?" should be
+  // shown. Conditions: today isn't already logged as bleeding, the user
+  // hasn't dismissed the prompt this session or earlier today, and today
+  // falls inside (or just around) any predicted period window. We check both
+  // the next predicted cycle (in case the prediction is in the near future)
+  // *and* the cycle immediately preceding it — the latter handles the case
+  // where `computePredictions` rolled `nextPeriodStart` forward past today
+  // and the "missed" cycle starting before today is the one currently in
+  // progress.
+  const todayInPredictedWindow = (() => {
+    if (!predictions.nextPeriodStart) return false;
+    const cycleLen = predictions.effectiveCycleLength;
+    const next = parseISO(predictions.nextPeriodStart);
+    const prev = addDays(next, -cycleLen);
+    const lastLogged = predictions.lastPeriodStart
+      ? parseISO(predictions.lastPeriodStart)
+      : null;
+    const candidates: Date[] = [next];
+    if (lastLogged && differenceInCalendarDays(prev, lastLogged) > 0) {
+      candidates.push(prev);
+    }
+    for (const start of candidates) {
+      const days = differenceInCalendarDays(start, today);
+      if (days <= 2 && days >= -7) return true;
+    }
+    return false;
   })();
+
+  const showConfirmModal =
+    !todayAlreadyLogged &&
+    !confirmDismissed &&
+    !confirmJustSaved &&
+    data.periodPromptSnoozedAt !== todayKey &&
+    todayInPredictedWindow;
 
   const onConfirmYes = async () => {
     await upsertLogs([{ date: todayKey, flow: 'medium' }]);
     setConfirmJustSaved(true);
+    setConfirmDismissed(true);
   };
-  const onConfirmNo = () => setConfirmDismissed(true);
+  const onConfirmNo = async () => {
+    setConfirmDismissed(true);
+    await setPeriodPromptSnoozed(todayKey);
+  };
   const cycleLen = predictions.effectiveCycleLength;
   const periodLen = predictions.effectivePeriodLength;
   const lutealLen = data.settings.lutealPhaseLength;
@@ -283,31 +310,36 @@ export const TodayScreen: React.FC = () => {
   const isEmpty = !predictions.lastPeriodStart;
 
   return (
-    <TodayInner
-      isEmpty={isEmpty}
-      dateStr={dateStr}
-      cycleDay={cycleDay}
-      phase={phase}
-      cycleLen={cycleLen}
-      segments={segments}
-      ringSize={ringSize}
-      renderCenter={renderCenter}
-      untilPeriodValue={untilPeriodValue}
-      fertileValue={fertileValue}
-      nextOvulationValue={nextOvulationValue}
-      colors={colors}
-      styles={styles}
-      t={t}
-      insets={insets}
-      showConfirmCard={showConfirmCard}
-      confirmJustSaved={confirmJustSaved}
-      onConfirmYes={onConfirmYes}
-      onConfirmNo={onConfirmNo}
-      isVip={isVip}
-      vipShipDate={vipShipDate}
-      onTapBox={() => navigation.navigate('Subscription' as never)}
-      arrivedHighlight={correction.isAroundPredicted}
-    />
+    <>
+      <TodayInner
+        isEmpty={isEmpty}
+        dateStr={dateStr}
+        cycleDay={cycleDay}
+        phase={phase}
+        cycleLen={cycleLen}
+        segments={segments}
+        ringSize={ringSize}
+        renderCenter={renderCenter}
+        untilPeriodValue={untilPeriodValue}
+        fertileValue={fertileValue}
+        nextOvulationValue={nextOvulationValue}
+        colors={colors}
+        styles={styles}
+        t={t}
+        insets={insets}
+        confirmJustSaved={confirmJustSaved}
+        isVip={isVip}
+        vipShipDate={vipShipDate}
+        onTapBox={() => navigation.navigate('Subscription' as never)}
+      />
+      <PeriodStartedPromptModal
+        visible={showConfirmModal}
+        onYes={onConfirmYes}
+        onNo={onConfirmNo}
+        colors={colors}
+        t={t}
+      />
+    </>
   );
 };
 
@@ -327,14 +359,10 @@ interface TodayInnerProps {
   styles: ReturnType<typeof makeStyles>;
   t: (key: string, vars?: Record<string, string | number>) => string;
   insets: { top: number; right: number; bottom: number; left: number };
-  showConfirmCard: boolean;
   confirmJustSaved: boolean;
-  onConfirmYes: () => void;
-  onConfirmNo: () => void;
   isVip: boolean;
   vipShipDate: Date | null;
   onTapBox: () => void;
-  arrivedHighlight: boolean;
 }
 
 const TodayInner: React.FC<TodayInnerProps> = ({
@@ -353,14 +381,10 @@ const TodayInner: React.FC<TodayInnerProps> = ({
   styles,
   t,
   insets,
-  showConfirmCard,
   confirmJustSaved,
-  onConfirmYes,
-  onConfirmNo,
   isVip,
   vipShipDate,
   onTapBox,
-  arrivedHighlight,
 }) => {
   const dash = t('today.placeholderValue');
   const showCycleDay = !isEmpty && cycleDay !== null;
@@ -437,9 +461,7 @@ const TodayInner: React.FC<TodayInnerProps> = ({
           <View style={styles.ctaWrap}>
             <Text style={styles.ctaHint}>{t('today.noCycleHint')}</Text>
           </View>
-        ) : (
-          <PeriodStartedButton highlight={arrivedHighlight} colors={colors} />
-        )}
+        ) : null}
 
         {isVip && vipShipDate ? (
           <Pressable style={styles.vipCard} onPress={onTapBox}>
@@ -461,31 +483,6 @@ const TodayInner: React.FC<TodayInnerProps> = ({
               <Text style={styles.vipHint}>{t('today.boxHint')}</Text>
             </View>
           </Pressable>
-        ) : null}
-
-        {!isEmpty && showConfirmCard && !confirmJustSaved ? (
-          <View style={styles.confirmCard}>
-            <Text style={styles.confirmTitle}>{t('today.confirmTitle')}</Text>
-            <Text style={styles.confirmHint}>{t('today.confirmHint')}</Text>
-            <View style={styles.confirmRow}>
-              <Pressable
-                style={[styles.confirmBtn, styles.confirmBtnPrimary]}
-                onPress={onConfirmYes}
-              >
-                <Text style={styles.confirmBtnPrimaryText}>
-                  {t('today.confirmYes')}
-                </Text>
-              </Pressable>
-              <Pressable
-                style={[styles.confirmBtn, styles.confirmBtnGhost]}
-                onPress={onConfirmNo}
-              >
-                <Text style={styles.confirmBtnGhostText}>
-                  {t('today.confirmNo')}
-                </Text>
-              </Pressable>
-            </View>
-          </View>
         ) : null}
 
         {!isEmpty && confirmJustSaved ? (

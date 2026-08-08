@@ -206,6 +206,13 @@ export interface AppData {
   settings: Settings;
   profile: Profile;
   onboardingDone: boolean;
+  /** ISO timestamp when the user accepted the privacy policy + user agreement.
+   * Required before the rest of the app is reachable, including the
+   * onboarding "Hi there" screen, for compliance with 152-ФЗ in RU. */
+  consentAcceptedAt: string | null;
+  /** YYYY-MM-DD of the last day the user dismissed the "did your period
+   * start today?" popup with "Not yet". Re-prompts the next day. */
+  periodPromptSnoozedAt: string | null;
   subscription: Subscription;
   shippingAddress: ShippingAddress;
   boxProfile: BoxProfile;

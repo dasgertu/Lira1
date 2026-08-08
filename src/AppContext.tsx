@@ -26,7 +26,13 @@ import {
 import { loadData, saveData, clearData as clearStorage } from './storage';
 import { setLocale, t as translate } from './i18n';
 import { ThemeColors, resolveColors } from './theme';
-import { computePredictions, CyclePredictions } from './cycle';
+import {
+  computePredictions,
+  CyclePredictions,
+  findPeriodEpisodes,
+  findPeriodStarts,
+} from './cycle';
+import { pushCyclePayloadToBot } from './utils/subscription';
 import { rescheduleNotifications } from './notifications';
 
 interface AppContextValue {
@@ -41,6 +47,8 @@ interface AppContextValue {
   updateSettings: (patch: Partial<Settings>) => Promise<void>;
   updateProfile: (patch: Partial<Profile>) => Promise<void>;
   setOnboardingDone: (done: boolean) => Promise<void>;
+  setConsentAccepted: () => Promise<void>;
+  setPeriodPromptSnoozed: (ymd: string) => Promise<void>;
   updateSubscription: (patch: Partial<Subscription>) => Promise<void>;
   updateShippingAddress: (patch: Partial<ShippingAddress>) => Promise<void>;
   updateBoxProfile: (patch: Partial<BoxProfile>) => Promise<void>;
@@ -73,6 +81,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     settings: { ...DEFAULT_SETTINGS },
     profile: { ...DEFAULT_PROFILE },
     onboardingDone: false,
+    consentAcceptedAt: null,
+    periodPromptSnoozedAt: null,
     subscription: { ...DEFAULT_SUBSCRIPTION },
     shippingAddress: { ...EMPTY_ADDRESS },
     boxProfile: { ...DEFAULT_BOX_PROFILE },
@@ -92,6 +102,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       mounted = false;
     };
   }, []);
+
+  // Once the user logs anything cycle-related, mirror it to the bot so
+  // the operator's box-questionnaire view stays current with each app
+  // update — no need for the user to keep tapping "Sync with Telegram"
+  // every month. Debounced to avoid spamming the API on rapid edits.
+  // Idempotent: server only writes through to Profile if device_id is
+  // already bound; otherwise it just stashes the latest snapshot.
+  useEffect(() => {
+    if (!ready) return;
+    const handle = setTimeout(() => {
+      const starts = findPeriodStarts(data.logs);
+      if (starts.length === 0) return;
+      const anchor = starts[starts.length - 1];
+      const episodes = findPeriodEpisodes(data.logs);
+      void pushCyclePayloadToBot({
+        anchorDate: anchor,
+        cycleLength: data.settings.averageCycleLength,
+        periodLength: data.settings.averagePeriodLength,
+        episodes,
+      });
+    }, 1500);
+    return () => clearTimeout(handle);
+  }, [
+    ready,
+    data.logs,
+    data.settings.averageCycleLength,
+    data.settings.averagePeriodLength,
+  ]);
 
   // Keep i18n in sync synchronously during render so the same render that
   // bumps `language` already produces translated strings.
@@ -186,6 +224,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     [persist],
   );
 
+  const setConsentAccepted = useCallback(async () => {
+    const current = dataRef.current;
+    if (current.consentAcceptedAt) return;
+    const next: AppData = {
+      ...current,
+      consentAcceptedAt: new Date().toISOString(),
+    };
+    await persist(next);
+  }, [persist]);
+
+  const setPeriodPromptSnoozed = useCallback(
+    async (ymd: string) => {
+      const current = dataRef.current;
+      if (current.periodPromptSnoozedAt === ymd) return;
+      const next: AppData = { ...current, periodPromptSnoozedAt: ymd };
+      await persist(next);
+    },
+    [persist],
+  );
+
   const updateSubscription = useCallback(
     async (patch: Partial<Subscription>) => {
       const current = dataRef.current;
@@ -259,6 +317,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       settings: { ...DEFAULT_SETTINGS },
       profile: { ...DEFAULT_PROFILE },
       onboardingDone: false,
+      consentAcceptedAt: null,
+      periodPromptSnoozedAt: null,
       subscription: { ...DEFAULT_SUBSCRIPTION },
       shippingAddress: { ...EMPTY_ADDRESS },
       boxProfile: { ...DEFAULT_BOX_PROFILE },
@@ -316,6 +376,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       updateSettings,
       updateProfile,
       setOnboardingDone,
+      setConsentAccepted,
+      setPeriodPromptSnoozed,
       updateSubscription,
       updateShippingAddress,
       updateBoxProfile,
@@ -337,6 +399,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       updateSettings,
       updateProfile,
       setOnboardingDone,
+      setConsentAccepted,
+      setPeriodPromptSnoozed,
       updateSubscription,
       updateShippingAddress,
       updateBoxProfile,

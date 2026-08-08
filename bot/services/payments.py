@@ -8,7 +8,7 @@ from aiogram.types import LabeledPrice
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.config import get_settings
-from bot.models import Order, OrderStatus, Tariff, User
+from bot.models import Order, OrderStatus, Subscription, Tariff, User
 from bot.services.codes import issue_code
 from bot.services.subscriptions import create_subscription
 
@@ -69,6 +69,10 @@ async def finalize_payment(
     """Persist Order, create Subscription, issue activation code.
 
     Returns (order, activation_code_value).
+
+    Kept for backwards compatibility with the legacy code-based activation
+    path. The new flow (``finalize_payment_no_code``) skips code issuance
+    and relies on device_id ↔ telegram_id binding.
     """
     sub = await create_subscription(
         session, user=user, tariff=tariff, payment_id=payment_id
@@ -87,3 +91,35 @@ async def finalize_payment(
     session.add(order)
     await session.flush()
     return order, code.code
+
+
+async def finalize_payment_no_code(
+    session: AsyncSession,
+    *,
+    user: User,
+    tariff: Tariff,
+    payment_id: str,
+    amount_rub: int,
+) -> tuple[Order, Subscription]:
+    """Persist Order + Subscription without issuing an activation code.
+
+    The Lira app reads subscription status via
+    ``GET /v1/subscription?device_id=…`` against ``users.device_id``,
+    so no manual code entry is needed.
+    """
+    sub = await create_subscription(
+        session, user=user, tariff=tariff, payment_id=payment_id
+    )
+    order = Order(
+        user_id=user.id,
+        subscription_id=sub.id,
+        status=OrderStatus.PAID,
+        amount_rub=amount_rub,
+        payment_provider="telegram",
+        provider_payment_id=payment_id,
+        paid_at=sub.started_at,
+        snapshot={"tariff": tariff.value, "device_id": user.device_id},
+    )
+    session.add(order)
+    await session.flush()
+    return order, sub

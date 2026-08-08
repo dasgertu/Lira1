@@ -11,6 +11,7 @@ from datetime import timedelta
 
 from aiogram import F, Router
 from aiogram.filters import Command, CommandObject, CommandStart
+from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 
 from bot.db import session_scope
@@ -61,7 +62,13 @@ async def _apply_code(message: Message, code: str) -> None:
 
 
 @router.message(Command("sync"))
-async def on_sync(message: Message, command: CommandObject) -> None:
+async def on_sync(message: Message, command: CommandObject, state: FSMContext) -> None:
+    from bot.handlers.start import ensure_consent
+
+    if message.from_user is None:
+        return
+    if not await ensure_consent(message, state, message.from_user, pending="welcome"):
+        return
     raw = (command.args or "").strip()
     if not raw:
         await message.answer(HELP, parse_mode="HTML")
@@ -73,6 +80,12 @@ async def on_sync(message: Message, command: CommandObject) -> None:
     CommandStart(deep_link=True),
     F.text.lower().regexp(r"^/start\s+sync_"),
 )
-async def on_start_with_sync(message: Message, command: CommandObject) -> None:
+async def on_start_with_sync(message: Message, command: CommandObject, state: FSMContext) -> None:
+    from bot.handlers.start import ensure_consent
+
+    if message.from_user is None:
+        return
+    if not await ensure_consent(message, state, message.from_user, pending="welcome"):
+        return
     raw = (command.args or "").strip()
     await _apply_code(message, raw[len("sync_"):])
